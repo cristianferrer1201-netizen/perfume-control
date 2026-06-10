@@ -147,6 +147,22 @@ state.orders = state.orders.map(order => ({
       })
 }));
 
+state.sales = state.sales.map(sale => ({
+  ...sale,
+  items: Array.isArray(sale.items)
+    ? sale.items.map((item,index)=>{
+        if(typeof item!=="string") {
+          const product=state.products.find(product=>product.id===item.productId)
+            || state.products.find(product=>product.name===item.name);
+          return {...item,productId:item.productId||product?.id||`SALE-${index}`,brand:item.brand||product?.brand||"",ml:Number(item.ml)||product?.ml||100,qty:Number(item.qty)||1,price:Number(item.price)||product?.price||0,cost:Number(item.cost)||product?.cost||0};
+        }
+        const product=state.products.find(product=>product.name.toLowerCase()===item.toLowerCase())
+          || state.products.find(product=>item.toLowerCase().includes(product.name.toLowerCase()));
+        return {productId:product?.id||`SALE-${index}`,name:product?.name||item,brand:product?.brand||"",ml:product?.ml||100,qty:1,price:product?.price||0,cost:product?.cost||0};
+      })
+    : []
+}));
+
 const viewContainer = document.querySelector("#viewContainer");
 const modalBackdrop = document.querySelector("#modalBackdrop");
 const modalContent = document.querySelector("#modalContent");
@@ -255,9 +271,9 @@ function metric(label,value,trend,trendClass,icon) {
 function rankItem(p,i,max) {
   return `<div class="rank-item"><span class="rank-number">${i+1}</span><div><strong>${p.name}</strong><div class="rank-bar"><i style="width:${p.sold/max*100}%"></i></div></div><strong>${p.sold}</strong></div>`;
 }
-function salesTable(sales) {
-  return `<div class="table-wrap"><table><thead><tr><th>Venta</th><th>Cliente</th><th>Productos</th><th>Total</th><th>Estado</th><th>Fecha</th></tr></thead><tbody>
-  ${sales.map(s=>`<tr><td><strong>${s.id}</strong></td><td>${s.client}</td><td>${saleItemsLabel(s.items)}</td><td>${money(s.total)}</td><td>${statusPill(s.status)}</td><td>${formatDate(s.date)}</td></tr>`).join("")}
+function salesTable(sales,editable=false) {
+  return `<div class="table-wrap"><table><thead><tr><th>Venta</th><th>Cliente</th><th>Productos</th><th>Total</th><th>Estado</th><th>Fecha</th>${editable?"<th></th>":""}</tr></thead><tbody>
+  ${sales.map(s=>`<tr><td><strong>${s.id}</strong></td><td>${s.client}</td><td>${saleItemsLabel(s.items)}</td><td>${money(s.total)}</td><td>${statusPill(s.status)}</td><td>${formatDate(s.date)}</td>${editable?`<td><button class="mini-button" data-edit-sale="${s.id}">Editar</button></td>`:""}</tr>`).join("")}
   </tbody></table></div>`;
 }
 function saleItemsLabel(items=[]) {
@@ -333,7 +349,11 @@ function salesView() {
         </div>
         <button class="primary-button" id="completeSale">Confirmar venta · ${money(subtotal)}</button>
       </aside>
-    </div>`;
+    </div>
+    <section class="panel sales-history">
+      <div class="panel-header"><div><h3>Ventas registradas</h3><p class="panel-subtitle">Puedes corregir cliente, productos, cantidades, precios y pago.</p></div></div>
+      ${salesTable(state.sales,true)}
+    </section>`;
 }
 
 function ordersView() {
@@ -344,7 +364,7 @@ function ordersView() {
       <div class="mini-stat"><span>En preparación / delivery</span><strong>${state.orders.filter(o=>["Preparando","Delivery"].includes(o.status)).length}</strong></div>
       <div class="mini-stat"><span>Por cobrar</span><strong>${money(state.orders.reduce((a,o)=>a+(o.total-o.paid),0))}</strong></div>
     </div>
-    ${state.orders.map(o=>`<article class="order-card"><div class="order-top"><div><span class="eyebrow">${o.id}</span><h3>${o.client}</h3></div>${statusPill(o.status)}</div><div class="order-meta"><span>Fecha: ${formatDate(o.date)}</span><span>Total: <strong>${money(o.total)}</strong></span><span>Pagado: ${money(o.paid)}</span><span>Saldo: ${money(o.total-o.paid)}</span></div><p class="order-products"><strong>${orderItemsLabel(o.items)}</strong><br><small>${o.address}</small></p><div class="row-actions"><button class="mini-button" data-order-next="${o.id}">Avanzar estado</button><button class="mini-button" data-order-payment="${o.id}">Registrar abono</button></div></article>`).join("")}`;
+    ${state.orders.map(o=>`<article class="order-card"><div class="order-top"><div><span class="eyebrow">${o.id}</span><h3>${o.client}</h3></div>${statusPill(o.status)}</div><div class="order-meta"><span>Fecha: ${formatDate(o.date)}</span><span>Total: <strong>${money(o.total)}</strong></span><span>Pagado: ${money(o.paid)}</span><span>Saldo: ${money(o.total-o.paid)}</span></div><p class="order-products"><strong>${orderItemsLabel(o.items)}</strong><br><small>${o.address}</small></p><div class="row-actions"><button class="mini-button" data-edit-order="${o.id}">Editar</button><button class="mini-button" data-order-next="${o.id}">Avanzar estado</button><button class="mini-button" data-order-payment="${o.id}">Registrar abono</button></div></article>`).join("")}`;
 }
 
 function orderItemsLabel(items=[]) {
@@ -391,6 +411,7 @@ function suppliersView() {
             <div class="purchase-summary">${o.items.slice(0,3).map(item=>`<span>${item.name} · ${item.ml} ml · ${item.qty} un.</span>`).join("")}${o.items.length>3?`<span>+ ${o.items.length-3} productos</span>`:""}</div>
             <div class="order-actions">
               <button class="mini-button" data-view-purchase="${o.id}">Ver lista</button>
+              <button class="mini-button" data-edit-purchase="${o.id}">Editar</button>
               <button class="mini-button" data-print-purchase="${o.id}">Imprimir</button>
               <button class="mini-button" data-image-purchase="${o.id}">Imagen</button>
               <button class="mini-button" data-pdf-purchase="${o.id}">PDF</button>
@@ -522,8 +543,11 @@ function bindViewEvents() {
   document.querySelector("#completeSale")?.addEventListener("click",completeSale);
   document.querySelector("#addClient")?.addEventListener("click",openClientForm);
   document.querySelector("#addExpense")?.addEventListener("click",openExpenseForm);
-  document.querySelector("#addOrder")?.addEventListener("click",openOrderForm);
-  document.querySelector("#createPurchaseOrder")?.addEventListener("click",openPurchaseOrderForm);
+  document.querySelector("#addOrder")?.addEventListener("click",()=>openOrderForm());
+  document.querySelector("#createPurchaseOrder")?.addEventListener("click",()=>openPurchaseOrderForm());
+  document.querySelectorAll("[data-edit-sale]").forEach(el=>el.onclick=()=>openSaleEditForm(state.sales.find(sale=>sale.id===el.dataset.editSale)));
+  document.querySelectorAll("[data-edit-order]").forEach(el=>el.onclick=()=>openOrderForm(state.orders.find(order=>order.id===el.dataset.editOrder)));
+  document.querySelectorAll("[data-edit-purchase]").forEach(el=>el.onclick=()=>openPurchaseOrderForm(state.purchaseOrders.find(order=>order.id===el.dataset.editPurchase)));
   document.querySelectorAll("[data-order-next]").forEach(el=>el.onclick=()=>advanceOrder(el.dataset.orderNext));
   document.querySelectorAll("[data-order-payment]").forEach(el=>el.onclick=()=>registerPayment(el.dataset.orderPayment));
   document.querySelectorAll("[data-receive-order]").forEach(el=>el.onclick=()=>receivePurchase(el.dataset.receiveOrder));
@@ -579,10 +603,65 @@ function completeSale() {
   const method=document.querySelector("#paymentMethod").value;
   const client=document.querySelector("#saleClient").value;
   const id=`V-${1049+state.sales.length}`;
-  state.sales.unshift({id,date:new Date().toISOString(),client,total,cost,status:method==="Abono"?"Abono":"Pagado",method,delivery:delivery>0,items:state.cart.map(i=>({name:i.name,ml:i.ml,qty:i.qty,price:i.price}))});
+  const soldItems=state.cart.map(i=>{
+    const product=state.products.find(product=>product.id===i.id);
+    return {productId:i.id,name:i.name,brand:product?.brand||"",ml:i.ml,qty:i.qty,price:i.price,cost:i.cost};
+  });
+  state.sales.unshift({id,date:new Date().toISOString(),client,total,cost,status:method==="Abono"?"Abono":"Pagado",method,delivery:delivery>0,items:soldItems});
   state.cart.forEach(i=>{const p=state.products.find(p=>p.id===i.id);p.stock-=i.qty;p.sold+=i.qty;});
-  if(delivery>0||method==="Abono") state.orders.unshift({id:`PED-${32+state.orders.length}`,client,date:todayISO(),total,status:delivery?"Delivery":"Pendiente",paid:method==="Abono"?Math.round(total/2):total,products:state.cart.map(i=>`${i.qty} × ${i.name} ${i.ml} ml`).join(", "),address:delivery?"Dirección por confirmar":"Recojo en tienda"});
+  if(delivery>0||method==="Abono") state.orders.unshift({id:`PED-${32+state.orders.length}`,client,date:todayISO(),total,status:delivery?"Delivery":"Pendiente",paid:method==="Abono"?Math.round(total/2):total,items:soldItems,address:delivery?"Dirección por confirmar":"Recojo en tienda"});
   state.cart=[]; persist(); showToast(`Venta ${id} registrada correctamente.`); setView("dashboard");
+}
+
+function openSaleEditForm(sale) {
+  if(!sale) return showToast("No se encontró la venta.");
+  openModal(`<h2>Editar venta ${sale.id}</h2><form id="saleEditForm" class="form-grid">
+    <input type="hidden" name="id" value="${sale.id}">
+    <div class="form-group"><label>Cliente</label><input name="client" list="saleClientList" value="${sale.client}" required><datalist id="saleClientList">${state.clients.map(client=>`<option value="${client.name}">`).join("")}</datalist></div>
+    <div class="form-group"><label>Fecha</label><input name="date" type="date" value="${sale.date.slice(0,10)}" required></div>
+    <div class="form-group"><label>Método de pago</label><select name="method">${["Efectivo","Yape","Plin","BCP","Interbank","Transferencia","Abono"].map(method=>`<option ${method===sale.method?"selected":""}>${method}</option>`).join("")}</select></div>
+    <div class="form-group"><label>Estado</label><select name="status">${["Pagado","Abono","Pendiente"].map(status=>`<option ${status===sale.status?"selected":""}>${status}</option>`).join("")}</select></div>
+    <div class="form-group"><label>Entrega</label><select name="delivery"><option value="false" ${!sale.delivery?"selected":""}>Recojo</option><option value="true" ${sale.delivery?"selected":""}>Delivery</option></select></div>
+    <div class="form-group full"><div class="list-label"><label>Productos vendidos</label><button type="button" class="link-button" id="addSaleEditRow">＋ Agregar artículo</button></div>
+      <div class="customer-order-head"><span>Artículo</span><span>ML</span><span>Cantidad</span><span>Precio</span><span></span></div>
+      <div class="customer-order-lines" id="saleEditLines">${sale.items.map(item=>saleEditLine(item)).join("")}</div>
+    </div>
+    <div class="purchase-form-total full"><span>Total de venta</span><strong id="saleEditTotal">${money(sale.total)}</strong></div>
+    <div class="modal-actions full"><button type="button" class="secondary-button" data-close-modal>Cancelar</button><button type="submit" class="primary-button">Guardar cambios</button></div>
+  </form>`);
+  document.querySelector(".modal").classList.add("modal-wide");
+  document.querySelector("#addSaleEditRow").onclick=()=>{
+    document.querySelector("#saleEditLines").insertAdjacentHTML("beforeend",saleEditLine());
+    updateSaleEditTotal();
+  };
+  document.querySelector("#saleEditLines").addEventListener("input",updateSaleEditTotal);
+  document.querySelector("#saleEditLines").addEventListener("change",e=>{
+    if(e.target.matches("[name='saleProductId']")){
+      const product=state.products.find(item=>item.id===e.target.value);
+      const row=e.target.closest(".customer-order-line");
+      row.querySelector("[name='saleMl']").value=product.ml;
+      row.querySelector("[name='salePrice']").value=product.price;
+    }
+    updateSaleEditTotal();
+  });
+  document.querySelector("#saleEditLines").addEventListener("click",e=>{
+    if(e.target.matches("[data-remove-sale-line]")){e.target.closest(".customer-order-line").remove();updateSaleEditTotal();}
+  });
+}
+function saleEditLine(item={}) {
+  const product=state.products.find(product=>product.id===item.productId)||state.products.find(product=>product.name===item.name)||state.products[0];
+  return `<div class="customer-order-line">
+    <select name="saleProductId" required>${state.products.map(option=>`<option value="${option.id}" ${option.id===product.id?"selected":""}>${option.name} · ${option.brand}</option>`).join("")}</select>
+    <select name="saleMl" required>${[30,50,60,100].map(ml=>`<option value="${ml}" ${ml===Number(item.ml||product.ml)?"selected":""}>${ml} ml</option>`).join("")}</select>
+    <input name="saleQty" type="number" min="1" value="${item.qty||1}" aria-label="Cantidad" required>
+    <input name="salePrice" type="number" min="0" step=".01" value="${item.price??product.price}" aria-label="Precio" required>
+    <button type="button" class="remove-line" data-remove-sale-line>×</button>
+  </div>`;
+}
+function updateSaleEditTotal() {
+  const total=[...document.querySelectorAll("#saleEditLines .customer-order-line")].reduce((sum,row)=>sum+(Number(row.querySelector("[name='saleQty']").value)||0)*(Number(row.querySelector("[name='salePrice']").value)||0),0);
+  const target=document.querySelector("#saleEditTotal");
+  if(target) target.textContent=money(total);
 }
 
 function openClientForm() {
@@ -591,19 +670,22 @@ function openClientForm() {
 function openExpenseForm() {
   openModal(`<h2>Registrar gasto</h2><form id="expenseForm" class="form-grid"><div class="form-group full"><label>Descripción</label><input name="description" required></div><div class="form-group"><label>Monto</label><input name="amount" type="number" step=".01" required></div><div class="form-group"><label>Fecha</label><input name="date" type="date" value="${todayISO()}" required></div><div class="modal-actions full"><button type="button" class="secondary-button" data-close-modal>Cancelar</button><button class="primary-button">Registrar gasto</button></div></form>`);
 }
-function openOrderForm() {
+function openOrderForm(order=null) {
   if(!state.products.length) return showToast("Primero agrega artículos al catálogo.");
-  openModal(`<h2>Nuevo pedido</h2><form id="orderForm" class="form-grid">
-    <div class="form-group"><label>Cliente</label><input name="client" list="clientList" required><datalist id="clientList">${state.clients.map(client=>`<option value="${client.name}">`).join("")}</datalist></div>
-    <div class="form-group"><label>Fecha</label><input name="date" type="date" value="${todayISO()}" required></div>
+  const items=order?.items?.length?order.items:[{productId:state.products[0].id,ml:state.products[0].ml,qty:1,price:state.products[0].price}];
+  openModal(`<h2>${order?"Editar":"Nuevo"} pedido</h2><form id="orderForm" class="form-grid">
+    <input type="hidden" name="id" value="${order?.id||""}">
+    <div class="form-group"><label>Cliente</label><input name="client" list="clientList" value="${order?.client||""}" required><datalist id="clientList">${state.clients.map(client=>`<option value="${client.name}">`).join("")}</datalist></div>
+    <div class="form-group"><label>Fecha</label><input name="date" type="date" value="${order?.date?.slice(0,10)||todayISO()}" required></div>
     <div class="form-group full"><div class="list-label"><label>Artículos solicitados</label><button type="button" class="link-button" id="addCustomerOrderRow">＋ Agregar artículo</button></div>
       <div class="customer-order-head"><span>Artículo</span><span>ML</span><span>Cantidad</span><span>Precio</span><span></span></div>
-      <div class="customer-order-lines" id="customerOrderLines">${customerOrderLine()}</div>
+      <div class="customer-order-lines" id="customerOrderLines">${items.map(item=>customerOrderLine(state.products.find(product=>product.id===item.productId)||state.products.find(product=>product.name===item.name)||state.products[0],item)).join("")}</div>
     </div>
-    <div class="form-group"><label>Total</label><input name="total" id="customerOrderTotal" type="number" step=".01" value="${state.products[0]?.price||0}" required></div>
-    <div class="form-group"><label>Abono recibido</label><input name="paid" type="number" step=".01" value="0"></div>
-    <div class="form-group full"><label>Dirección / entrega</label><input name="address" required></div>
-    <div class="modal-actions full"><button type="button" class="secondary-button" data-close-modal>Cancelar</button><button type="submit" class="primary-button">Crear pedido</button></div>
+    <div class="form-group"><label>Total</label><input name="total" id="customerOrderTotal" type="number" step=".01" value="${order?.total??state.products[0]?.price??0}" required></div>
+    <div class="form-group"><label>Abono recibido</label><input name="paid" type="number" step=".01" value="${order?.paid||0}"></div>
+    <div class="form-group"><label>Estado</label><select name="status">${["Pendiente","Preparando","Delivery","Entregado"].map(status=>`<option ${status===(order?.status||"Pendiente")?"selected":""}>${status}</option>`).join("")}</select></div>
+    <div class="form-group full"><label>Dirección / entrega</label><input name="address" value="${order?.address||""}" required></div>
+    <div class="modal-actions full"><button type="button" class="secondary-button" data-close-modal>Cancelar</button><button type="submit" class="primary-button">${order?"Guardar cambios":"Crear pedido"}</button></div>
   </form>`);
   document.querySelector(".modal").classList.add("modal-wide");
   document.querySelector("#addCustomerOrderRow").onclick=()=>{
@@ -625,12 +707,12 @@ function openOrderForm() {
   });
 }
 
-function customerOrderLine(product=state.products[0]) {
+function customerOrderLine(product=state.products[0],item={}) {
   return `<div class="customer-order-line">
     <select name="orderProductId" required>${state.products.map(item=>`<option value="${item.id}" ${item.id===product.id?"selected":""}>${item.name} · ${item.brand}</option>`).join("")}</select>
-    <select name="orderMl" required>${[30,50,60,100].map(ml=>`<option value="${ml}" ${ml===product.ml?"selected":""}>${ml} ml</option>`).join("")}</select>
-    <input name="orderQty" type="number" min="1" value="1" aria-label="Cantidad" required>
-    <input name="orderPrice" type="number" min="0" step=".01" value="${product.price}" aria-label="Precio" required>
+    <select name="orderMl" required>${[30,50,60,100].map(ml=>`<option value="${ml}" ${ml===Number(item.ml||product.ml)?"selected":""}>${ml} ml</option>`).join("")}</select>
+    <input name="orderQty" type="number" min="1" value="${item.qty||1}" aria-label="Cantidad" required>
+    <input name="orderPrice" type="number" min="0" step=".01" value="${item.price??product.price}" aria-label="Precio" required>
     <button type="button" class="remove-line" data-remove-order-line>×</button>
   </div>`;
 }
@@ -639,27 +721,31 @@ function updateCustomerOrderTotal() {
   const input=document.querySelector("#customerOrderTotal");
   if(input) input.value=total.toFixed(2);
 }
-function openPurchaseOrderForm() {
+function openPurchaseOrderForm(order=null) {
   const demand=pendingDemand();
   const suggested=demand.length
     ? demand.map(item=>({product:state.products.find(product=>product.id===item.productId)||state.products.find(product=>product.name===item.name),ml:item.ml,qty:item.toOrder})).filter(item=>item.product)
     : state.products.filter(p=>p.stock<=p.minStock).map(product=>({product,ml:product.ml,qty:Math.max(6-product.stock,2)}));
-  openModal(`<h2>Nueva orden de compra</h2>
+  const initialItems=order?.items?.length
+    ? order.items.map(item=>({product:state.products.find(product=>product.id===item.productId)||state.products.find(product=>product.name===item.name)||state.products[0],...item}))
+    : (suggested.length?suggested.slice(0,8):[{product:state.products[0],ml:state.products[0]?.ml,qty:1}]).filter(item=>item.product);
+  openModal(`<h2>${order?"Editar":"Nueva"} orden de compra</h2>
     <form id="purchaseForm" class="form-grid">
-      <div class="form-group"><label>Proveedor</label><input name="supplier" value="Fragancias E&L" required></div>
-      <div class="form-group"><label>WhatsApp del proveedor</label><input name="supplierPhone" value="51927962831" inputmode="tel" placeholder="51999999999"></div>
-      <div class="form-group"><label>Fecha</label><input name="date" type="date" value="${todayISO()}" required></div>
-      <div class="form-group"><label>Estado</label><select name="status"><option>Pendiente</option><option>En tránsito</option></select></div>
+      <input type="hidden" name="id" value="${order?.id||""}">
+      <div class="form-group"><label>Proveedor</label><input name="supplier" value="${order?.supplier||"Fragancias E&L"}" required></div>
+      <div class="form-group"><label>WhatsApp del proveedor</label><input name="supplierPhone" value="${order?.supplierPhone||"51927962831"}" inputmode="tel" placeholder="51999999999"></div>
+      <div class="form-group"><label>Fecha</label><input name="date" type="date" value="${order?.date?.slice(0,10)||todayISO()}" required></div>
+      <div class="form-group"><label>Estado</label><select name="status">${["Pendiente","En tránsito","Recibido"].map(status=>`<option ${status===(order?.status||"Pendiente")?"selected":""}>${status}</option>`).join("")}</select></div>
       <div class="form-group full">
         <div class="list-label"><label>Lista de productos</label><button type="button" class="link-button" id="addPurchaseRow">＋ Agregar fila</button></div>
-        <div class="purchase-line-head"><span>Producto</span><span>ML</span><span>Cantidad</span><span>Precio unit.</span><span></span></div>
+        <div class="purchase-line-head"><span>Producto</span><span>ML</span><span>Tipo</span><span>Cantidad</span><span>Precio unit.</span><span></span></div>
         <div class="purchase-lines" id="purchaseLines">
-          ${(suggested.length?suggested.slice(0,8):[{product:state.products[0],ml:state.products[0]?.ml,qty:1}]).filter(item=>item.product).map(item=>purchaseLineRow(item.product,item.qty,item.ml)).join("")}
+          ${initialItems.map(item=>purchaseLineRow(item.product,item.qty,item.ml,item.lineType,item.unitCost)).join("")}
         </div>
       </div>
-      <div class="form-group full"><label>Observaciones</label><textarea name="notes" placeholder="Presentación, condiciones de entrega, forma de pago..."></textarea></div>
-      <div class="purchase-form-total full"><span>Total estimado</span><strong id="purchaseFormTotal">${money(0)}</strong></div>
-      <div class="modal-actions full"><button type="button" class="secondary-button" data-close-modal>Cancelar</button><button class="primary-button">Generar orden</button></div>
+      <div class="form-group full"><label>Observaciones</label><textarea name="notes" placeholder="Presentación, condiciones de entrega, forma de pago...">${order?.notes||""}</textarea></div>
+      <div class="purchase-form-total full"><span>Total estimado</span><strong id="purchaseFormTotal">${money(order?.total||0)}</strong></div>
+      <div class="modal-actions full"><button type="button" class="secondary-button" data-close-modal>Cancelar</button><button class="primary-button">${order?"Guardar cambios":"Generar orden"}</button></div>
     </form>`);
   document.querySelector(".modal").classList.add("modal-wide");
   document.querySelector("#addPurchaseRow").onclick=()=>addPurchaseLine();
@@ -679,12 +765,13 @@ function openPurchaseOrderForm() {
   updatePurchaseFormTotal();
 }
 
-function purchaseLineRow(product=state.products[0], qty=1, selectedMl=product.ml) {
+function purchaseLineRow(product=state.products[0], qty=1, selectedMl=product.ml, lineType="Compra", unitCost=product.cost) {
   return `<div class="purchase-line">
     <select name="productId" required>${state.products.map(p=>`<option value="${p.id}" ${p.id===product.id?"selected":""}>${p.name} · ${p.brand}</option>`).join("")}</select>
     <select name="ml" aria-label="Mililitros" required>${[30,50,60,100].map(ml=>`<option value="${ml}" ${Number(selectedMl)===ml?"selected":""}>${ml} ml</option>`).join("")}</select>
+    <select name="lineType" aria-label="Tipo de pedido"><option value="Compra" ${lineType!=="Regalo"?"selected":""}>Compra</option><option value="Regalo" ${lineType==="Regalo"?"selected":""}>Regalo</option></select>
     <input name="qty" type="number" min="1" value="${qty}" aria-label="Cantidad" required>
-    <input name="unitCost" type="number" min="0" step=".01" value="${product.cost}" aria-label="Costo unitario" required>
+    <input name="unitCost" type="number" min="0" step=".01" value="${unitCost??product.cost}" aria-label="Costo unitario" required>
     <button type="button" class="remove-line" data-remove-line aria-label="Eliminar fila">×</button>
   </div>`;
 }
@@ -737,13 +824,76 @@ function nextProductId() {
 function getPurchaseOrder(id) {
   return state.purchaseOrders.find(order=>order.id===id);
 }
+function normalizePurchaseLabel(value) {
+  return String(value||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+}
+function purchaseItemCategory(item) {
+  return state.products.find(product=>product.id===item.productId)?.category||item.category||"";
+}
+function purchaseItemGender(item) {
+  const category=normalizePurchaseLabel(purchaseItemCategory(item));
+  if(category.includes("mujer")||category.includes("dama")) return "Dama";
+  if(category.includes("hombre")||category.includes("caballero")) return "Caballero";
+  return "";
+}
+function groupPurchaseItems(order) {
+  const groups=[];
+  order.items.forEach(item=>{
+    const category=normalizePurchaseLabel(purchaseItemCategory(item));
+    const isGift=normalizePurchaseLabel(item.lineType)==="regalo";
+    const isArabic=category.includes("arab");
+    const kind=isGift?"gift":isArabic?"arabic":"standard";
+    const prefix=isGift?"Regalo ":isArabic?"Arabe":"";
+    const key=`${kind}-${item.ml}`;
+    let group=groups.find(current=>current.key===key);
+    if(!group){
+      group={key,kind,ml:Number(item.ml),title:`${prefix}${item.ml}ml`,totalQty:0,isStandard:kind==="standard",sections:[]};
+      groups.push(group);
+    }
+    group.totalQty+=Number(item.qty)||0;
+    const sectionName=group.isStandard?purchaseItemGender(item):"";
+    let section=group.sections.find(current=>current.name===sectionName);
+    if(!section){section={name:sectionName,items:[]};group.sections.push(section);}
+    section.items.push(item);
+  });
+  const kindOrder={standard:0,arabic:1,gift:2};
+  groups.sort((a,b)=>(a.kind==="gift")-(b.kind==="gift")||a.ml-b.ml||kindOrder[a.kind]-kindOrder[b.kind]);
+  groups.forEach(group=>group.sections.sort((a,b)=>{
+    const sectionOrder={Dama:0,Caballero:1,"":2};
+    return sectionOrder[a.name]-sectionOrder[b.name];
+  }));
+  return groups;
+}
+function purchaseItemLine(item,includePrice=true) {
+  const quantity=Number(item.qty)>1?`${item.qty}- `:"";
+  const price=includePrice?` · ${money(item.unitCost)} c/u`:"";
+  return `${quantity}${item.name}${price}`;
+}
+function purchaseOrderPlainLines(order,includePrices=true) {
+  const lines=[];
+  groupPurchaseItems(order).forEach((group,index)=>{
+    if(index) lines.push("------------");
+    lines.push(`${group.title} -> ${group.totalQty}unid`);
+    lines.push("");
+    group.sections.forEach(section=>{
+      if(section.name) lines.push(`${section.name}:`);
+      section.items.forEach(item=>lines.push(purchaseItemLine(item,includePrices)));
+      lines.push("");
+    });
+  });
+  return lines;
+}
 function purchaseOrderDocument(order) {
+  const groups=groupPurchaseItems(order);
   return `<div class="purchase-document" id="purchaseDocument">
     <header><div><span class="document-brand">PERFUME CONTROL</span><h2>ORDEN DE COMPRA</h2><p>Gestión y venta de perfumes</p></div><div class="document-number"><span>Número</span><strong>${order.id}</strong><span>Fecha</span><strong>${formatDate(order.date)}</strong></div></header>
     <section class="document-parties"><div><span>Proveedor</span><strong>${order.supplier}</strong><small>${order.supplierPhone?`WhatsApp: +${order.supplierPhone}`:""}</small></div><div><span>Solicitado por</span><strong>Cristian Ferrer</strong><small>Perfume Control</small></div></section>
-    <table><thead><tr><th>#</th><th>Producto</th><th>Marca</th><th>ML</th><th>Cant.</th><th>Precio unit.</th><th>Subtotal</th></tr></thead><tbody>
-      ${order.items.map((item,index)=>`<tr><td>${index+1}</td><td><strong>${item.name}</strong></td><td>${item.brand||"-"}</td><td><strong>${item.ml} ml</strong></td><td>${item.qty}</td><td>${money(item.unitCost)}</td><td>${money(item.qty*item.unitCost)}</td></tr>`).join("")}
-    </tbody></table>
+    <div class="purchase-group-list">${groups.map(group=>`<section class="purchase-group">
+      <h3>${group.title} <span>→ ${group.totalQty} unid.</span></h3>
+      ${group.sections.map(section=>`<div class="purchase-section">${section.name?`<h4>${section.name}:</h4>`:""}<ul>
+        ${section.items.map(item=>`<li><span><strong>${Number(item.qty)>1?`${item.qty}- `:""}${item.name}</strong>${item.brand?` <small>${item.brand}</small>`:""}</span><span>${money(item.unitCost)} c/u · <strong>${money(item.qty*item.unitCost)}</strong></span></li>`).join("")}
+      </ul></div>`).join("")}
+    </section>`).join("")}</div>
     <div class="document-bottom"><div><span>Observaciones</span><p>${order.notes||"Sin observaciones."}</p></div><div class="document-total"><span>Total estimado</span><strong>${money(order.total)}</strong></div></div>
     <footer>Por favor confirmar disponibilidad, precio final y fecha estimada de entrega.</footer>
   </div>`;
@@ -769,7 +919,7 @@ function printPurchaseOrder(id) {
   printWindow.document.close();
 }
 function purchaseOrderText(order) {
-  const lines=order.items.map((item,index)=>`${index+1}. ${item.name} (${item.brand||"Sin marca"}) - ${item.ml} ml - ${item.qty} und. x ${money(item.unitCost)} = ${money(item.qty*item.unitCost)}`);
+  const lines=purchaseOrderPlainLines(order);
   return `ORDEN DE COMPRA ${order.id}\nProveedor: ${order.supplier}\nFecha: ${formatDate(order.date)}\n\n${lines.join("\n")}\n\nTOTAL: ${money(order.total)}\n${order.notes?`Observaciones: ${order.notes}\n`:""}Por favor confirmar disponibilidad y fecha de entrega.`;
 }
 function drawWrappedText(ctx,text,x,y,maxWidth,lineHeight) {
@@ -780,8 +930,9 @@ function drawWrappedText(ctx,text,x,y,maxWidth,lineHeight) {
   return y+lines.length*lineHeight;
 }
 async function createPurchaseImage(order) {
-  const width=1200, padding=72, rowHeight=62;
-  const height=430+order.items.length*rowHeight+(order.notes?100:40);
+  const width=1200, padding=72, lineHeight=36;
+  const groupedLines=purchaseOrderPlainLines(order);
+  const height=430+groupedLines.length*lineHeight+(order.notes?120:70);
   const canvas=document.createElement("canvas"); canvas.width=width; canvas.height=height;
   const ctx=canvas.getContext("2d");
   ctx.fillStyle="#f8f5ef";ctx.fillRect(0,0,width,height);
@@ -793,17 +944,13 @@ async function createPurchaseImage(order) {
   ctx.fillStyle="#171310";ctx.font="700 24px Arial";ctx.fillText(`Proveedor: ${order.supplier}`,padding,240);
   ctx.font="18px Arial";ctx.fillStyle="#71685f";ctx.fillText(order.supplierPhone?`WhatsApp: +${order.supplierPhone}`:"",padding,272);
   let y=325;
-  ctx.fillStyle="#e9dfcf";ctx.fillRect(padding,y,width-padding*2,46);
-  ctx.fillStyle="#171310";ctx.font="700 17px Arial";
-  ctx.fillText("#",padding+18,y+29);ctx.fillText("PRODUCTO",padding+60,y+29);ctx.fillText("ML",710,y+29);ctx.fillText("CANT.",790,y+29);ctx.fillText("COSTO",890,y+29);ctx.fillText("SUBTOTAL",1020,y+29);
-  y+=46;
-  order.items.forEach((item,index)=>{
-    ctx.fillStyle=index%2?"#f1ece4":"#fff";ctx.fillRect(padding,y,width-padding*2,rowHeight);
-    ctx.fillStyle="#171310";ctx.font="18px Arial";ctx.fillText(String(index+1),padding+18,y+37);
-    ctx.font="700 19px Arial";ctx.fillText(item.name,padding+60,y+27);
-    ctx.font="16px Arial";ctx.fillStyle="#71685f";ctx.fillText(item.brand||"",padding+60,y+49);
-    ctx.fillStyle="#171310";ctx.font="18px Arial";ctx.fillText(`${item.ml}`,710,y+37);ctx.fillText(String(item.qty),805,y+37);ctx.fillText(money(item.unitCost),890,y+37);ctx.font="700 18px Arial";ctx.fillText(money(item.qty*item.unitCost),1020,y+37);
-    y+=rowHeight;
+  groupedLines.forEach(line=>{
+    const isHeader=/ml -> \d+unid$/i.test(line);
+    const isSection=/^(Dama|Caballero):$/.test(line);
+    ctx.fillStyle=isHeader?"#a87935":"#171310";
+    ctx.font=isHeader?"700 25px Arial":isSection?"700 21px Arial":"18px Arial";
+    if(line) ctx.fillText(line,padding+(isSection?18:isHeader?0:34),y);
+    y+=lineHeight;
   });
   y+=34;ctx.fillStyle="#71685f";ctx.font="700 16px Arial";ctx.fillText("OBSERVACIONES",padding,y);
   ctx.fillStyle="#171310";ctx.font="18px Arial";y=drawWrappedText(ctx,order.notes||"Sin observaciones.",padding,y+30,680,25);
@@ -813,18 +960,15 @@ async function createPurchaseImage(order) {
 function createPurchasePDF(order) {
   const clean=value=>String(value).normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^\x20-\x7E]/g,"");
   const escape=value=>clean(value).replace(/\\/g,"\\\\").replace(/\(/g,"\\(").replace(/\)/g,"\\)");
-  const pageSize=24;
-  const pages=Array.from({length:Math.max(1,Math.ceil(order.items.length/pageSize))},(_,index)=>order.items.slice(index*pageSize,(index+1)*pageSize));
+  const orderLines=purchaseOrderPlainLines(order);
+  const pageSize=29;
+  const pages=Array.from({length:Math.max(1,Math.ceil(orderLines.length/pageSize))},(_,index)=>orderLines.slice(index*pageSize,(index+1)*pageSize));
   const fontId=3+pages.length*2;
   const kids=pages.map((_,index)=>`${3+index*2} 0 R`).join(" ");
   const objects=["<< /Type /Catalog /Pages 2 0 R >>",`<< /Type /Pages /Kids [${kids}] /Count ${pages.length} >>`];
-  pages.forEach((items,pageIndex)=>{
-    const commands=["BT","/F1 18 Tf","50 790 Td",`(${escape("PERFUME CONTROL - ORDEN DE COMPRA")}) Tj`,"/F1 10 Tf","0 -28 Td",`(${escape(`${order.id}  |  ${formatDate(order.date)}  |  Pagina ${pageIndex+1} de ${pages.length}`)}) Tj`,"0 -20 Td",`(${escape(`Proveedor: ${order.supplier}`)}) Tj`,"0 -28 Td",`(${escape("#  PRODUCTO / MARCA                    ML   CANT.   COSTO      SUBTOTAL")}) Tj`];
-    items.forEach((item,index)=>{
-      const itemNumber=pageIndex*pageSize+index+1;
-      const name=`${item.name} ${item.brand?`/ ${item.brand}`:""}`.slice(0,33).padEnd(35," ");
-      commands.push(`0 -22 Td (${escape(`${String(itemNumber).padStart(2,"0")} ${name} ${String(item.ml).padStart(3," ")}  ${String(item.qty).padStart(4," ")}   ${money(item.unitCost).padStart(9," ")}   ${money(item.qty*item.unitCost).padStart(10," ")}`)}) Tj`);
-    });
+  pages.forEach((lines,pageIndex)=>{
+    const commands=["BT","/F1 18 Tf","50 790 Td",`(${escape("PERFUME CONTROL - ORDEN DE COMPRA")}) Tj`,"/F1 10 Tf","0 -28 Td",`(${escape(`${order.id}  |  ${formatDate(order.date)}  |  Pagina ${pageIndex+1} de ${pages.length}`)}) Tj`,"0 -20 Td",`(${escape(`Proveedor: ${order.supplier}`)}) Tj`,"0 -28 Td"];
+    lines.forEach(line=>commands.push(`0 -22 Td (${escape(line)}) Tj`));
     if(pageIndex===pages.length-1) commands.push("0 -32 Td",`(${escape(`TOTAL ESTIMADO: ${money(order.total)}`)}) Tj`,"0 -25 Td",`(${escape(`Observaciones: ${order.notes||"Sin observaciones."}`)}) Tj`,"0 -25 Td",`(${escape("Confirmar disponibilidad y fecha estimada de entrega.")}) Tj`);
     commands.push("ET");
     const stream=commands.join("\n");
@@ -878,6 +1022,34 @@ function exportCSV() {
   showToast("Reporte exportado correctamente.");
 }
 
+function findInventoryProduct(item) {
+  return state.products.find(product=>product.id===item.productId&&product.ml===Number(item.ml))
+    || state.products.find(product=>product.name===item.name&&product.ml===Number(item.ml))
+    || state.products.find(product=>product.id===item.productId);
+}
+function adjustSaleInventory(items,direction) {
+  items.forEach(item=>{
+    const product=findInventoryProduct(item);
+    if(!product) return;
+    product.stock=Math.max(0,product.stock+direction*Number(item.qty||0));
+    product.sold=Math.max(0,product.sold-direction*Number(item.qty||0));
+  });
+}
+function adjustReceivedPurchase(items,direction) {
+  items.forEach(item=>{
+    let product=findInventoryProduct(item);
+    if(!product&&direction>0){
+      const source=state.products.find(current=>current.id===item.productId)||{};
+      product={...source,id:nextProductId(),name:item.name,brand:item.brand,category:item.category||source.category||"Nicho",ml:item.ml,cost:item.unitCost,price:source.price||item.unitCost,stock:0,minStock:4,sold:0,active:true};
+      state.products.push(product);
+    }
+    if(product){
+      product.stock=Math.max(0,product.stock+direction*Number(item.qty||0));
+      if(direction>0) product.cost=Number(item.unitCost)||product.cost;
+    }
+  });
+}
+
 document.addEventListener("submit",e=>{
   e.preventDefault();
   const data=Object.fromEntries(new FormData(e.target));
@@ -903,27 +1075,64 @@ document.addEventListener("submit",e=>{
       const product=state.products.find(item=>item.id===productId);
       return {productId,name:product.name,brand:product.brand,ml:+mls[index],qty:+quantities[index],price:+prices[index]};
     });
-    state.orders.unshift({id:`PED-${32+state.orders.length}`,client:data.client,date:data.date,total:+data.total,paid:+data.paid,address:data.address,status:"Pendiente",items});
-    persist();closeModal();render();showToast("Pedido creado y agregado a la demanda de compra.");
+    const current=data.id&&state.orders.find(order=>order.id===data.id);
+    const values={client:data.client,date:data.date,total:+data.total,paid:Math.min(+data.paid,+data.total),address:data.address,status:data.status||"Pendiente",items};
+    if(current) Object.assign(current,values);
+    else state.orders.unshift({id:`PED-${32+state.orders.length}`,...values});
+    persist();closeModal();render();showToast(current?"Pedido actualizado correctamente.":"Pedido creado y agregado a la demanda de compra.");
   }
   if(e.target.id==="purchaseForm"){
     const formData=new FormData(e.target);
     const productIds=formData.getAll("productId");
     const milliliters=formData.getAll("ml");
+    const lineTypes=formData.getAll("lineType");
     const quantities=formData.getAll("qty");
     const unitCosts=formData.getAll("unitCost");
     if(!productIds.length) return showToast("Agrega al menos un producto a la orden.");
     const items=productIds.map((productId,index)=>{
       const product=state.products.find(p=>p.id===productId);
-      return {productId,name:product.name,brand:product.brand,ml:+milliliters[index],qty:+quantities[index],unitCost:+unitCosts[index]};
+      return {productId,name:product.name,brand:product.brand,category:product.category,ml:+milliliters[index],lineType:lineTypes[index]||"Compra",qty:+quantities[index],unitCost:+unitCosts[index]};
     });
     const total=items.reduce((sum,item)=>sum+item.qty*item.unitCost,0);
-    state.purchaseOrders.unshift({
-      id:`OC-${String(9+state.purchaseOrders.length).padStart(3,"0")}`,
-      supplier:data.supplier, supplierPhone:data.supplierPhone, date:data.date,
-      status:data.status, notes:data.notes, items, total
+    const current=data.id&&state.purchaseOrders.find(order=>order.id===data.id);
+    if(current?.status==="Recibido") adjustReceivedPurchase(current.items,-1);
+    const values={supplier:data.supplier,supplierPhone:data.supplierPhone,date:data.date,status:data.status,notes:data.notes,items,total};
+    if(current) Object.assign(current,values);
+    else state.purchaseOrders.unshift({id:`OC-${String(9+state.purchaseOrders.length).padStart(3,"0")}`,...values});
+    if(data.status==="Recibido") adjustReceivedPurchase(items,1);
+    persist();closeModal();render();showToast(current?"Orden de compra actualizada.":"Orden de compra generada.");
+  }
+  if(e.target.id==="saleEditForm"){
+    const formData=new FormData(e.target);
+    const sale=state.sales.find(item=>item.id===formData.get("id"));
+    if(!sale) return showToast("No se encontró la venta.");
+    const productIds=formData.getAll("saleProductId");
+    const mls=formData.getAll("saleMl");
+    const quantities=formData.getAll("saleQty");
+    const prices=formData.getAll("salePrice");
+    if(!productIds.length) return showToast("Agrega al menos un producto.");
+    const items=productIds.map((productId,index)=>{
+      const product=state.products.find(item=>item.id===productId);
+      return {productId,name:product.name,brand:product.brand,ml:+mls[index],qty:+quantities[index],price:+prices[index],cost:product.cost};
     });
-    persist();closeModal();render();showToast("Orden de compra generada.");
+    adjustSaleInventory(sale.items,1);
+    const unavailable=items.find(item=>(findInventoryProduct(item)?.stock||0)<item.qty);
+    if(unavailable){
+      adjustSaleInventory(sale.items,-1);
+      return showToast(`Stock insuficiente para ${unavailable.name}.`);
+    }
+    adjustSaleInventory(items,-1);
+    Object.assign(sale,{
+      client:formData.get("client"),
+      date:formData.get("date"),
+      method:formData.get("method"),
+      status:formData.get("status"),
+      delivery:formData.get("delivery")==="true",
+      items,
+      total:items.reduce((sum,item)=>sum+item.qty*item.price,0),
+      cost:items.reduce((sum,item)=>sum+item.qty*item.cost,0)
+    });
+    persist();closeModal();render();showToast(`Venta ${sale.id} actualizada.`);
   }
 });
 
