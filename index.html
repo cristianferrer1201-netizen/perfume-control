@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#16120f">
+  <title>Perfume Control</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-mark">PC</div>
+        <div>
+          <strong>Perfume Control</strong>
+          <span>Gestión inteligente</span>
+        </div>
+      </div>
+
+      <nav class="nav" aria-label="Navegación principal">
+        <button class="nav-item active" data-view="dashboard"><span>⌂</span> Inicio</button>
+        <button class="nav-item" data-view="inventory"><span>◇</span> Inventario</button>
+        <button class="nav-item" data-view="sales"><span>＋</span> Nueva venta</button>
+        <button class="nav-item" data-view="orders"><span>▣</span> Pedidos</button>
+        <button class="nav-item" data-view="clients"><span>♙</span> Clientes</button>
+        <button class="nav-item" data-view="suppliers"><span>▤</span> Proveedores</button>
+        <button class="nav-item" data-view="finance"><span>↗</span> Finanzas</button>
+        <button class="nav-item" data-view="reports"><span>▥</span> Reportes</button>
+      </nav>
+
+      <div class="sidebar-card">
+        <span class="eyebrow">Meta mensual</span>
+        <strong>S/ 12,000</strong>
+        <div class="progress"><i id="goalProgress"></i></div>
+        <small id="goalText">Calculando progreso...</small>
+      </div>
+
+      <div class="user-card">
+        <div class="avatar">CF</div>
+        <div><strong>Cristian Ferrer</strong><span>Administrador</span></div>
+        <button aria-label="Configuración">⋮</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <button class="menu-button" id="menuButton" aria-label="Abrir menú">☰</button>
+        <div>
+          <p class="eyebrow" id="todayLabel"></p>
+          <h1 id="pageTitle">Buenos días, Cristian</h1>
+        </div>
+        <div class="top-actions">
+          <label class="global-search">
+            <span>⌕</span>
+            <input id="globalSearch" type="search" placeholder="Buscar perfume, cliente...">
+          </label>
+          <button class="icon-button" id="notificationButton" aria-label="Notificaciones">♢<b id="notificationCount">3</b></button>
+          <button class="primary-button" data-open-sale><span>＋</span> Nueva venta</button>
+        </div>
+      </header>
+
+      <section id="viewContainer"></section>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" role="status"></div>
+  <div class="modal-backdrop" id="modalBackdrop" hidden>
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <button class="modal-close" id="modalClose" aria-label="Cerrar">×</button>
+      <div id="modalContent"></div>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
