@@ -42,44 +42,13 @@ const PRODUCTS = [
   active: true
 }));
 
-const DEMO_SALES = [
-  {id:"V-1048", date:new Date().toISOString(), client:"María López", total:185, cost:92, status:"Pagado", method:"Yape", delivery:false, items:["Yara","Good Girl"]},
-  {id:"V-1047", date:new Date(Date.now()-86400000).toISOString(), client:"Andrea Ruiz", total:160, cost:90, status:"Abono", method:"Efectivo", delivery:true, items:["Nebras"]},
-  {id:"V-1046", date:new Date(Date.now()-2*86400000).toISOString(), client:"José Ramos", total:155, cost:90, status:"Pagado", method:"Plin", delivery:true, items:["9PM"]},
-  {id:"V-1045", date:new Date(Date.now()-3*86400000).toISOString(), client:"Luis Vega", total:105, cost:42, status:"Pendiente", method:"Transferencia", delivery:false, items:["Sauvage","Aqua Di Gio"]},
-  {id:"V-1044", date:new Date(Date.now()-5*86400000).toISOString(), client:"Carla Díaz", total:220, cost:135, status:"Pagado", method:"BCP", delivery:false, items:["Amber Rouge"]}
-];
-
-const DEMO_CLIENTS = [
-  {id:"C001",name:"María López",phone:"987 456 321",address:"Los Olivos, Lima",birthday:"1994-08-12",purchases:8,total:940,lastBuy:"2026-06-10"},
-  {id:"C002",name:"Andrea Ruiz",phone:"956 234 118",address:"San Martín de Porres",birthday:"1990-11-03",purchases:5,total:635,lastBuy:"2026-06-09"},
-  {id:"C003",name:"José Ramos",phone:"944 337 220",address:"Comas, Lima",birthday:"1988-04-18",purchases:6,total:810,lastBuy:"2026-06-08"},
-  {id:"C004",name:"Luis Vega",phone:"912 876 345",address:"Independencia, Lima",birthday:"1996-06-10",purchases:3,total:305,lastBuy:"2026-06-07"},
-  {id:"C005",name:"Carla Díaz",phone:"932 147 085",address:"Callao",birthday:"1992-09-22",purchases:9,total:1280,lastBuy:"2026-06-05"}
-];
-
-const DEMO_ORDERS = [
-  {id:"PED-031",client:"Andrea Ruiz",date:"2026-06-10",total:160,status:"Delivery",paid:80,products:"1 × Nebras",address:"San Martín de Porres"},
-  {id:"PED-030",client:"Luis Vega",date:"2026-06-09",total:105,status:"Pendiente",paid:0,products:"1 × Sauvage, 1 × Aqua Di Gio",address:"Recojo en tienda"},
-  {id:"PED-029",client:"Rosa Medina",date:"2026-06-08",total:170,status:"Preparando",paid:170,products:"1 × Eclaire",address:"Comas, Lima"}
-];
-
 const state = {
   products: load("pc_products", PRODUCTS),
-  sales: load("pc_sales", DEMO_SALES),
-  clients: load("pc_clients", DEMO_CLIENTS),
-  orders: load("pc_orders", DEMO_ORDERS),
-  expenses: load("pc_expenses", [{id:"G001",date:"2026-06-08",description:"Publicidad Facebook",amount:120},{id:"G002",date:"2026-06-09",description:"Delivery",amount:35}]),
-  purchaseOrders: load("pc_purchase_orders", [{
-    id:"OC-008", supplier:"Fragancias E&L", supplierPhone:"51927962831",
-    date:"2026-06-08", total:720, status:"En tránsito",
-    notes:"Confirmar disponibilidad antes del envío.",
-    items:[
-      {productId:"P026",name:"Yara",brand:"Lattafa",qty:4,unitCost:75},
-      {productId:"P023",name:"Asad",brand:"Lattafa",qty:3,unitCost:72},
-      {productId:"P022",name:"9PM",brand:"Afnan",qty:2,unitCost:90}
-    ]
-  }]),
+  sales: load("pc_sales", []),
+  clients: load("pc_clients", []),
+  orders: load("pc_orders", []),
+  expenses: load("pc_expenses", []),
+  purchaseOrders: load("pc_purchase_orders", []),
   cart: [],
   view: "dashboard",
   inventorySearch: "",
@@ -117,6 +86,26 @@ if (!localStorage.getItem("pc_stock_reset_v1")) {
   state.products.forEach(product => product.stock = 0);
   localStorage.setItem("pc_stock_reset_v1","done");
   localStorage.setItem("pc_products",JSON.stringify(state.products));
+}
+
+if (!localStorage.getItem("pc_fresh_start_v1")) {
+  state.products.forEach(product=>{
+    product.stock=0;
+    product.sold=0;
+  });
+  state.sales=[];
+  state.clients=[];
+  state.orders=[];
+  state.expenses=[];
+  state.purchaseOrders=[];
+  state.cart=[];
+  localStorage.setItem("pc_products",JSON.stringify(state.products));
+  localStorage.setItem("pc_sales","[]");
+  localStorage.setItem("pc_clients","[]");
+  localStorage.setItem("pc_orders","[]");
+  localStorage.setItem("pc_expenses","[]");
+  localStorage.setItem("pc_purchase_orders","[]");
+  localStorage.setItem("pc_fresh_start_v1","done");
 }
 
 state.purchaseOrders = state.purchaseOrders.map(order => ({
@@ -220,10 +209,10 @@ function dashboardView() {
   const salesToday = todaySales.reduce((a,s)=>a+s.total,0);
   const profitToday = todaySales.reduce((a,s)=>a+(s.total-s.cost),0);
   const monthSales = state.sales.reduce((a,s)=>a+s.total,0);
-  const lowStock = state.products.filter(p=>p.stock<=p.minStock);
-  const top = [...state.products].sort((a,b)=>b.sold-a.sold).slice(0,3);
-  const chartValues = [420,680,510,890,760,1120, salesToday || 640];
-  const max = Math.max(...chartValues);
+  const lowStock = state.products.filter(p=>p.stock>0&&p.stock<=p.minStock);
+  const top = [...state.products].filter(p=>p.sold>0).sort((a,b)=>b.sold-a.sold).slice(0,3);
+  const chartValues = [0,0,0,0,0,0,salesToday];
+  const max = Math.max(...chartValues,1);
   return `
     <section class="hero">
       <div>
@@ -238,9 +227,9 @@ function dashboardView() {
       <div class="bottle-stage"><div class="stage-ring"></div><div class="stage-ring two"></div><div class="bottle"></div></div>
     </section>
     <section class="metrics-grid">
-      ${metric("Ventas de hoy",shortMoney(salesToday || 640),"+12%","up","S/")}
-      ${metric("Ganancia de hoy",shortMoney(profitToday || 285),"+8%","up","↗")}
-      ${metric("Pedidos pendientes",state.orders.filter(o=>o.status!=="Entregado").length,"2 delivery","", "▣")}
+      ${metric("Ventas de hoy",shortMoney(salesToday),"","","S/")}
+      ${metric("Ganancia de hoy",shortMoney(profitToday),"","","↗")}
+      ${metric("Pedidos pendientes",state.orders.filter(o=>o.status!=="Entregado").length,"","", "▣")}
       ${metric("Stock crítico",lowStock.length,"Requieren atención","down","!")}
     </section>
     <section class="content-grid">
@@ -260,7 +249,7 @@ function dashboardView() {
       </div>
       <div class="panel">
         <div class="panel-header"><div><h3>Más vendidos</h3><p class="panel-subtitle">Ranking del catálogo</p></div></div>
-        <div class="ranking">${top.map((p,i)=>rankItem(p,i,top[0].sold)).join("")}</div>
+        <div class="ranking">${top.length?top.map((p,i)=>rankItem(p,i,top[0].sold)).join(""):`<div class="empty-state">Todavía no hay ventas registradas.</div>`}</div>
       </div>
     </section>`;
 }
@@ -269,7 +258,7 @@ function metric(label,value,trend,trendClass,icon) {
   return `<article class="metric"><div class="metric-top"><span class="metric-icon">${icon}</span><span class="trend ${trendClass}">${trend}</span></div><strong>${value}</strong><small>${label}</small></article>`;
 }
 function rankItem(p,i,max) {
-  return `<div class="rank-item"><span class="rank-number">${i+1}</span><div><strong>${p.name}</strong><div class="rank-bar"><i style="width:${p.sold/max*100}%"></i></div></div><strong>${p.sold}</strong></div>`;
+  return `<div class="rank-item"><span class="rank-number">${i+1}</span><div><strong>${p.name}</strong><div class="rank-bar"><i style="width:${max?p.sold/max*100:0}%"></i></div></div><strong>${p.sold}</strong></div>`;
 }
 function salesTable(sales,editable=false) {
   return `<div class="table-wrap"><table><thead><tr><th>Venta</th><th>Cliente</th><th>Productos</th><th>Total</th><th>Estado</th><th>Fecha</th>${editable?"<th></th>":""}</tr></thead><tbody>
@@ -399,7 +388,7 @@ function clientsView() {
 
 function suppliersView() {
   const demand = pendingDemand();
-  const suggested = demand.length ? demand : state.products.filter(p=>p.stock<=p.minStock).map(p=>({...p,toOrder:Math.max(6-p.stock,2),qty:0}));
+  const suggested = demand.length ? demand : state.products.filter(p=>p.stock>0&&p.stock<=p.minStock).map(p=>({...p,toOrder:Math.max(6-p.stock,2),qty:0}));
   return `
     <div class="section-heading"><div><h2>Pedidos a proveedores</h2><p>Crea listas detalladas y compártelas por WhatsApp, imagen o PDF.</p></div><button class="primary-button" id="createPurchaseOrder">＋ Crear orden de compra</button></div>
     <div class="content-grid">
@@ -421,7 +410,7 @@ function suppliersView() {
           </article>`).join("")}
       </section>
       <aside class="panel"><div class="panel-header"><div><h3>Compra sugerida</h3><p class="panel-subtitle">${demand.length?"Basada en pedidos pendientes":"Basada en stock mínimo"}</p></div></div><div class="alert-list">
-        ${suggested.map(p=>`<div class="alert-item"><div class="product-thumb ${colorClass(p.category||"") }">${initials(p.name)}</div><div><strong>${p.name} · ${p.ml} ml</strong><span>${p.brand}${p.qty?` · pedidos: ${p.qty}`:""}</span></div><span class="stock-pill low">Pedir ${p.toOrder}</span></div>`).join("")}
+        ${suggested.length?suggested.map(p=>`<div class="alert-item"><div class="product-thumb ${colorClass(p.category||"") }">${initials(p.name)}</div><div><strong>${p.name} · ${p.ml} ml</strong><span>${p.brand}${p.qty?` · pedidos: ${p.qty}`:""}</span></div><span class="stock-pill low">Pedir ${p.toOrder}</span></div>`).join(""):`<div class="empty-state">No hay compras sugeridas todavía.</div>`}
       </div></aside>
     </div>`;
 }
@@ -432,7 +421,7 @@ function financeView() {
   const expenses = state.expenses.reduce((a,e)=>a+e.amount,0);
   return `
     <div class="section-heading"><div><h2>Finanzas</h2><p>Ingresos, gastos y utilidad del negocio.</p></div><button class="primary-button" id="addExpense">＋ Registrar gasto</button></div>
-    <div class="metrics-grid">${metric("Ingresos",money(income),"+12%","up","S/")}${metric("Costo de mercadería",money(costs),"","","◇")}${metric("Gastos operativos",money(expenses),"","","↓")}${metric("Utilidad neta",money(income-costs-expenses),`${Math.round((income-costs-expenses)/income*100)}% margen`,"up","↗")}</div>
+    <div class="metrics-grid">${metric("Ingresos",money(income),"","","S/")}${metric("Costo de mercadería",money(costs),"","","◇")}${metric("Gastos operativos",money(expenses),"","","↓")}${metric("Utilidad neta",money(income-costs-expenses),`${income?Math.round((income-costs-expenses)/income*100):0}% margen`,"","↗")}</div>
     <section class="panel"><div class="panel-header"><div><h3>Movimientos</h3><p class="panel-subtitle">Ventas y gastos registrados</p></div></div>
       <div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Descripción</th><th>Tipo</th><th>Monto</th></tr></thead><tbody>
         ${state.sales.map(s=>`<tr><td>${formatDate(s.date)}</td><td>Venta ${s.id} · ${s.client}</td><td><span class="status-pill paid">Ingreso</span></td><td><strong>${money(s.total)}</strong></td></tr>`).join("")}
@@ -442,15 +431,15 @@ function financeView() {
 }
 
 function reportsView() {
-  const top = [...state.products].sort((a,b)=>b.sold-a.sold).slice(0,10);
-  const mostProfitable = [...state.products].sort((a,b)=>(b.price-b.cost)*b.sold-(a.price-a.cost)*a.sold).slice(0,5);
+  const top = [...state.products].filter(p=>p.sold>0).sort((a,b)=>b.sold-a.sold).slice(0,10);
+  const mostProfitable = [...state.products].filter(p=>p.sold>0).sort((a,b)=>(b.price-b.cost)*b.sold-(a.price-a.cost)*a.sold).slice(0,5);
   return `
     <div class="section-heading"><div><h2>Reportes e inteligencia</h2><p>Indicadores para tomar mejores decisiones.</p></div><div><button class="secondary-button" id="exportCSV">Exportar Excel</button> <button class="primary-button" onclick="window.print()">Imprimir PDF</button></div></div>
     <div class="report-grid">
-      <section class="panel"><div class="panel-header"><div><h3>Top 10 más vendidos</h3><p class="panel-subtitle">Unidades acumuladas</p></div></div><div class="ranking">${top.map((p,i)=>rankItem(p,i,top[0].sold)).join("")}</div></section>
-      <section class="panel"><div class="panel-header"><div><h3>Mayor rentabilidad</h3><p class="panel-subtitle">Ganancia estimada por producto</p></div></div><div class="ranking">${mostProfitable.map((p,i)=>`<div class="rank-item"><span class="rank-number">${i+1}</span><div><strong>${p.name}</strong><small>${p.brand} · margen ${Math.round((p.price-p.cost)/p.price*100)}%</small></div><strong>${money((p.price-p.cost)*p.sold)}</strong></div>`).join("")}</div></section>
+      <section class="panel"><div class="panel-header"><div><h3>Top 10 más vendidos</h3><p class="panel-subtitle">Unidades acumuladas</p></div></div><div class="ranking">${top.length?top.map((p,i)=>rankItem(p,i,top[0].sold)).join(""):`<div class="empty-state">Todavía no hay ventas registradas.</div>`}</div></section>
+      <section class="panel"><div class="panel-header"><div><h3>Mayor rentabilidad</h3><p class="panel-subtitle">Ganancia estimada por producto</p></div></div><div class="ranking">${mostProfitable.length?mostProfitable.map((p,i)=>`<div class="rank-item"><span class="rank-number">${i+1}</span><div><strong>${p.name}</strong><small>${p.brand} · margen ${p.price?Math.round((p.price-p.cost)/p.price*100):0}%</small></div><strong>${money((p.price-p.cost)*p.sold)}</strong></div>`).join(""):`<div class="empty-state">Todavía no hay ventas registradas.</div>`}</div></section>
       <section class="panel"><div class="panel-header"><div><h3>Clasificación ABC</h3><p class="panel-subtitle">Productos según rotación</p></div></div>
-        <div class="stat-strip"><div class="mini-stat"><span>A · Alta venta</span><strong>${state.products.filter(p=>p.sold>=18).length}</strong></div><div class="mini-stat"><span>B · Venta media</span><strong>${state.products.filter(p=>p.sold>=10&&p.sold<18).length}</strong></div><div class="mini-stat"><span>C · Venta baja</span><strong>${state.products.filter(p=>p.sold<10).length}</strong></div></div>
+        <div class="stat-strip"><div class="mini-stat"><span>A · Alta venta</span><strong>${state.products.filter(p=>p.sold>=18).length}</strong></div><div class="mini-stat"><span>B · Venta media</span><strong>${state.products.filter(p=>p.sold>=10&&p.sold<18).length}</strong></div><div class="mini-stat"><span>C · Venta baja</span><strong>${state.products.filter(p=>p.sold>0&&p.sold<10).length}</strong></div></div>
       </section>
       <section class="panel"><div class="panel-header"><div><h3>Proyección de meta</h3><p class="panel-subtitle">Objetivo mensual S/ 12,000</p></div></div>
         <h2>${money(Math.max(12000-state.sales.reduce((a,s)=>a+s.total,0),0))}</h2><p>Falta vender para alcanzar la meta. Equivale aproximadamente a <strong>${Math.ceil(Math.max(12000-state.sales.reduce((a,s)=>a+s.total,0),0)/120)} perfumes</strong> con ticket promedio de S/ 120.</p>
@@ -602,14 +591,14 @@ function completeSale() {
   const cost=state.cart.reduce((a,i)=>a+i.cost*i.qty,0);
   const method=document.querySelector("#paymentMethod").value;
   const client=document.querySelector("#saleClient").value;
-  const id=`V-${1049+state.sales.length}`;
+  const id=`V-${String(state.sales.length+1).padStart(4,"0")}`;
   const soldItems=state.cart.map(i=>{
     const product=state.products.find(product=>product.id===i.id);
     return {productId:i.id,name:i.name,brand:product?.brand||"",ml:i.ml,qty:i.qty,price:i.price,cost:i.cost};
   });
   state.sales.unshift({id,date:new Date().toISOString(),client,total,cost,status:method==="Abono"?"Abono":"Pagado",method,delivery:delivery>0,items:soldItems});
   state.cart.forEach(i=>{const p=state.products.find(p=>p.id===i.id);p.stock-=i.qty;p.sold+=i.qty;});
-  if(delivery>0||method==="Abono") state.orders.unshift({id:`PED-${32+state.orders.length}`,client,date:todayISO(),total,status:delivery?"Delivery":"Pendiente",paid:method==="Abono"?Math.round(total/2):total,items:soldItems,address:delivery?"Dirección por confirmar":"Recojo en tienda"});
+  if(delivery>0||method==="Abono") state.orders.unshift({id:`PED-${String(state.orders.length+1).padStart(3,"0")}`,client,date:todayISO(),total,status:delivery?"Delivery":"Pendiente",paid:method==="Abono"?Math.round(total/2):total,items:soldItems,address:delivery?"Dirección por confirmar":"Recojo en tienda"});
   state.cart=[]; persist(); showToast(`Venta ${id} registrada correctamente.`); setView("dashboard");
 }
 
@@ -1078,7 +1067,7 @@ document.addEventListener("submit",e=>{
     const current=data.id&&state.orders.find(order=>order.id===data.id);
     const values={client:data.client,date:data.date,total:+data.total,paid:Math.min(+data.paid,+data.total),address:data.address,status:data.status||"Pendiente",items};
     if(current) Object.assign(current,values);
-    else state.orders.unshift({id:`PED-${32+state.orders.length}`,...values});
+    else state.orders.unshift({id:`PED-${String(state.orders.length+1).padStart(3,"0")}`,...values});
     persist();closeModal();render();showToast(current?"Pedido actualizado correctamente.":"Pedido creado y agregado a la demanda de compra.");
   }
   if(e.target.id==="purchaseForm"){
@@ -1098,7 +1087,7 @@ document.addEventListener("submit",e=>{
     if(current?.status==="Recibido") adjustReceivedPurchase(current.items,-1);
     const values={supplier:data.supplier,supplierPhone:data.supplierPhone,date:data.date,status:data.status,notes:data.notes,items,total};
     if(current) Object.assign(current,values);
-    else state.purchaseOrders.unshift({id:`OC-${String(9+state.purchaseOrders.length).padStart(3,"0")}`,...values});
+    else state.purchaseOrders.unshift({id:`OC-${String(state.purchaseOrders.length+1).padStart(3,"0")}`,...values});
     if(data.status==="Recibido") adjustReceivedPurchase(items,1);
     persist();closeModal();render();showToast(current?"Orden de compra actualizada.":"Orden de compra generada.");
   }
@@ -1142,7 +1131,7 @@ document.querySelector("#menuButton").onclick=()=>document.querySelector("#sideb
 document.querySelector("#modalClose").onclick=closeModal;
 modalBackdrop.addEventListener("click",e=>{if(e.target===modalBackdrop)closeModal();});
 document.addEventListener("click",e=>{if(e.target.matches("[data-close-modal]"))closeModal();});
-document.querySelector("#notificationButton").onclick=()=>openModal(`<h2>Notificaciones</h2><div class="alert-list"><div class="alert-item"><div class="metric-icon">!</div><div><strong>Stock bajo</strong><span>Quedan 2 unidades de Eclaire.</span></div></div><div class="alert-item"><div class="metric-icon">♙</div><div><strong>Cumpleaños</strong><span>Hoy cumple años Luis Vega.</span></div></div><div class="alert-item"><div class="metric-icon">↗</div><div><strong>Resumen diario</strong><span>Las ventas de hoy superan en 12% al promedio.</span></div></div></div>`);
+document.querySelector("#notificationButton").onclick=()=>openModal(`<h2>Notificaciones</h2><div class="empty-state">No hay notificaciones todavía.</div>`);
 document.querySelector("#globalSearch").addEventListener("keydown",e=>{if(e.key==="Enter"){state.inventorySearch=e.target.value;setView("inventory");}});
 
 function updateGoal(){
