@@ -259,7 +259,9 @@ tr:last-child td { border-bottom: 0; }
 .whatsapp-button { min-height: 32px; padding: 6px 11px; color: #fff; border: 1px solid #1f9d55; border-radius: 8px; background: #25a95c; font-weight: 700; }
 .modal-wide { width: min(900px, 100%); }
 .modal-document { width: min(940px, 100%); padding: 20px; background: #ece8e2; }
-.list-label { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.list-label { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.line-list-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.line-list-actions select { height: 36px; padding: 0 30px 0 10px; border: 1px solid var(--line); border-radius: 9px; background: #fff; color: var(--ink); }
 .purchase-lines { display: grid; gap: 8px; }
 .purchase-line-head { display: grid; grid-template-columns: minmax(200px, 1fr) 78px 92px 82px 112px 36px; gap: 8px; padding: 0 8px 4px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .purchase-line { display: grid; grid-template-columns: minmax(200px, 1fr) 78px 92px 82px 112px 36px; gap: 8px; }

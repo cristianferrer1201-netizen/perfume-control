@@ -53,6 +53,8 @@ const state = {
   view: "dashboard",
   inventorySearch: "",
   inventoryCategory: "Todas",
+  productSort: "name-asc",
+  saleCategory: "Todas",
   selectedProducts: new Set()
 };
 
@@ -179,6 +181,48 @@ const formatDate = date => new Intl.DateTimeFormat("es-PE",{day:"2-digit",month:
 const todayISO = () => new Date().toISOString().slice(0,10);
 const initials = name => name.split(" ").slice(0,2).map(x=>x[0]).join("").toUpperCase();
 const colorClass = category => category.includes("Mujer") ? "rose" : category.includes("Hombre") ? "dark" : "gold";
+const normalizeText = value => String(value||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+
+function sortProducts(products, sort=state.productSort) {
+  const collator=new Intl.Collator("es",{sensitivity:"base",numeric:true});
+  return [...products].sort((a,b)=>{
+    if(sort==="name-desc") return collator.compare(b.name,a.name);
+    if(sort==="price-asc") return Number(a.price)-Number(b.price)||collator.compare(a.name,b.name);
+    if(sort==="price-desc") return Number(b.price)-Number(a.price)||collator.compare(a.name,b.name);
+    if(sort==="category") return collator.compare(a.category,b.category)||collator.compare(a.name,b.name);
+    return collator.compare(a.name,b.name);
+  });
+}
+
+function productMatches(product, query) {
+  const terms=normalizeText(query).trim().split(/\s+/).filter(Boolean);
+  const haystack=normalizeText(`${product.name} ${product.brand} ${product.id} ${product.category}`);
+  return terms.every(term=>haystack.includes(term));
+}
+
+function productSearchList(id="productSuggestions") {
+  return `<datalist id="${id}">${sortProducts(state.products).map(product=>`<option value="${product.name}">${product.brand} · ${product.category}</option>`).join("")}</datalist>`;
+}
+
+function productSortSelect(id="productSort") {
+  const options=[
+    ["name-asc","Nombre A - Z"],["name-desc","Nombre Z - A"],
+    ["price-asc","Precio: menor a mayor"],["price-desc","Precio: mayor a menor"],
+    ["category","Categoría"]
+  ];
+  return `<select id="${id}" aria-label="Ordenar productos">${options.map(([value,label])=>`<option value="${value}" ${state.productSort===value?"selected":""}>${label}</option>`).join("")}</select>`;
+}
+
+function productOptions(selectedId="") {
+  return sortProducts(state.products).map(product=>`<option value="${product.id}" ${product.id===selectedId?"selected":""}>${product.name} · ${product.brand} · ${product.category}</option>`).join("");
+}
+
+function reorderProductSelects(containerSelector, fieldName) {
+  document.querySelectorAll(`${containerSelector} select[name="${fieldName}"]`).forEach(select=>{
+    const selectedId=select.value;
+    select.innerHTML=productOptions(selectedId);
+  });
+}
 
 function showToast(message) {
   const toast = document.querySelector("#toast");
@@ -275,13 +319,13 @@ function statusPill(status) {
 
 function articlesView() {
   const categories=["Todas",...new Set(state.products.map(product=>product.category))];
-  const filtered=state.products.filter(product=>
+  const filtered=sortProducts(state.products.filter(product=>
     (state.inventoryCategory==="Todas"||product.category===state.inventoryCategory) &&
-    `${product.name} ${product.brand} ${product.id}`.toLowerCase().includes(state.inventorySearch.toLowerCase())
-  );
+    productMatches(product,state.inventorySearch)
+  ));
   return `
     <div class="section-heading"><div><h2>Catálogo de artículos</h2><p>Registra aquí todo lo que vendes. Luego aparecerá en pedidos, compras e inventario.</p></div><button class="primary-button" id="addProduct">＋ Agregar artículo</button></div>
-    <div class="toolbar"><input class="catalog-search" value="${state.inventorySearch}" placeholder="Buscar artículo..."><select id="categoryFilter">${categories.map(category=>`<option ${category===state.inventoryCategory?"selected":""}>${category}</option>`).join("")}</select></div>
+    <div class="toolbar"><input class="catalog-search" list="productSuggestions" value="${state.inventorySearch}" placeholder="Escribe nombre, marca o inicial...">${productSearchList()}<select id="categoryFilter">${categories.map(category=>`<option ${category===state.inventoryCategory?"selected":""}>${category}</option>`).join("")}</select>${productSortSelect()}</div>
     <div class="article-grid">${filtered.map(product=>`
       <article class="article-card">
         <div class="product-thumb ${colorClass(product.category)}">${initials(product.name)}</div>
@@ -293,10 +337,10 @@ function articlesView() {
 
 function inventoryView() {
   const categories = ["Todas",...new Set(state.products.map(p=>p.category))];
-  const filtered = state.products.filter(p=>
+  const filtered = sortProducts(state.products.filter(p=>
     (state.inventoryCategory==="Todas"||p.category===state.inventoryCategory) &&
-    `${p.name} ${p.brand} ${p.id}`.toLowerCase().includes(state.inventorySearch.toLowerCase())
-  );
+    productMatches(p,state.inventorySearch)
+  ));
   const selectedCount=state.selectedProducts.size;
   return `
     <div class="section-heading"><div><h2>Inventario</h2><p>${state.products.length} productos registrados · ${state.products.reduce((a,p)=>a+p.stock,0)} unidades disponibles</p></div><div class="heading-actions"><button class="secondary-button" id="clearAllStock">Vaciar stock</button><button class="primary-button" id="addProduct">＋ Agregar producto</button></div></div>
@@ -305,7 +349,7 @@ function inventoryView() {
       <div class="mini-stat"><span>Ganancia potencial</span><strong>${money(state.products.reduce((a,p)=>a+(p.price-p.cost)*p.stock,0))}</strong></div>
       <div class="mini-stat"><span>Productos con stock bajo</span><strong>${state.products.filter(p=>p.stock<=p.minStock).length}</strong></div>
     </div>
-    <div class="toolbar"><input class="catalog-search" value="${state.inventorySearch}" placeholder="Buscar por nombre, marca o código"><select id="categoryFilter">${categories.map(c=>`<option ${c===state.inventoryCategory?"selected":""}>${c}</option>`).join("")}</select>${selectedCount?`<button class="danger-button" id="deleteSelectedProducts">Eliminar seleccionados (${selectedCount})</button>`:""}</div>
+    <div class="toolbar"><input class="catalog-search" list="productSuggestions" value="${state.inventorySearch}" placeholder="Escribe nombre, marca o inicial...">${productSearchList()}<select id="categoryFilter">${categories.map(c=>`<option ${c===state.inventoryCategory?"selected":""}>${c}</option>`).join("")}</select>${productSortSelect()}${selectedCount?`<button class="danger-button" id="deleteSelectedProducts">Eliminar seleccionados (${selectedCount})</button>`:""}</div>
     <div class="table-wrap"><table><thead><tr><th><input type="checkbox" id="selectAllProducts" aria-label="Seleccionar todos" ${filtered.length&&filtered.every(p=>state.selectedProducts.has(p.id))?"checked":""}></th><th>Producto</th><th>Categoría</th><th>Costo</th><th>Precio</th><th>Margen</th><th>Stock</th><th></th></tr></thead><tbody>
       ${filtered.map(p=>`<tr class="${state.selectedProducts.has(p.id)?"selected-row":""}"><td><input type="checkbox" data-select-product="${p.id}" aria-label="Seleccionar ${p.name}" ${state.selectedProducts.has(p.id)?"checked":""}></td><td><div class="product-cell"><div class="product-thumb ${colorClass(p.category)}">${initials(p.name)}</div><div><strong>${p.name} · ${p.ml} ml</strong><span>${p.id} · ${p.brand}</span></div></div></td><td><span class="category-pill">${p.category}</span></td><td>${money(p.cost)}</td><td><strong>${money(p.price)}</strong></td><td>${Math.round((p.price-p.cost)/p.price*100)}%</td><td><span class="stock-pill ${p.stock<=p.minStock?"low":"ok"}">${p.stock} un.</span></td><td><div class="row-actions"><button class="mini-button" data-edit-product="${p.id}">Editar</button><button class="mini-button delete-product-button" data-delete-product="${p.id}">Eliminar</button></div></td></tr>`).join("") || `<tr><td colspan="8" class="empty-state">No se encontraron productos.</td></tr>`}
     </tbody></table></div>`;
@@ -313,13 +357,18 @@ function inventoryView() {
 
 function salesView() {
   const query = state.saleSearch || "";
-  const products = state.products.filter(p=>p.stock>0 && `${p.name} ${p.brand}`.toLowerCase().includes(query.toLowerCase()));
+  const categories=[...new Set(state.products.map(p=>p.category))].sort((a,b)=>a.localeCompare(b,"es"));
+  const products = sortProducts(state.products.filter(p=>
+    p.stock>0 &&
+    (state.saleCategory==="Todas"||p.category===state.saleCategory) &&
+    productMatches(p,query)
+  ));
   const subtotal = state.cart.reduce((a,item)=>a+item.price*item.qty,0);
   return `
     <div class="section-heading"><div><h2>Nueva venta</h2><p>Selecciona productos y registra el pago.</p></div></div>
     <div class="sales-layout">
       <section class="panel">
-        <div class="toolbar"><input id="saleSearch" value="${query}" placeholder="Buscar perfume..."><select id="saleCategory"><option>Todas las categorías</option>${[...new Set(state.products.map(p=>p.category))].map(c=>`<option>${c}</option>`).join("")}</select></div>
+        <div class="toolbar"><input id="saleSearch" list="saleProductSuggestions" value="${query}" placeholder="Escribe nombre, marca o inicial...">${productSearchList("saleProductSuggestions")}<select id="saleCategory"><option value="Todas">Todas las categorías</option>${categories.map(c=>`<option value="${c}" ${c===state.saleCategory?"selected":""}>${c}</option>`).join("")}</select>${productSortSelect("saleProductSort")}</div>
         <div class="product-picker">${products.length ? products.map(p=>`
           <button class="product-card" data-add-cart="${p.id}">
             <div class="product-visual"><i></i></div><strong>${p.name}</strong><small>${p.brand} · ${p.ml} ml</small>
@@ -523,7 +572,20 @@ function bindViewEvents() {
     },180);
   });
   document.querySelector("#categoryFilter")?.addEventListener("change",e=>{state.inventoryCategory=e.target.value; render();});
-  document.querySelector("#saleSearch")?.addEventListener("input",e=>{state.saleSearch=e.target.value; render(); document.querySelector("#saleSearch")?.focus();});
+  document.querySelector("#saleSearch")?.addEventListener("input",e=>{
+    state.saleSearch=e.target.value;
+    clearTimeout(state.saleSearchTimer);
+    state.saleSearchTimer=setTimeout(()=>{
+      render();
+      const search=document.querySelector("#saleSearch");
+      const position=state.saleSearch.length;
+      search?.focus();
+      search?.setSelectionRange(position,position);
+    },180);
+  });
+  document.querySelector("#saleCategory")?.addEventListener("change",e=>{state.saleCategory=e.target.value;render();});
+  document.querySelector("#productSort")?.addEventListener("change",e=>{state.productSort=e.target.value;render();});
+  document.querySelector("#saleProductSort")?.addEventListener("change",e=>{state.productSort=e.target.value;render();});
   document.querySelectorAll("[data-add-cart]").forEach(el=>el.onclick=()=>addToCart(el.dataset.addCart));
   document.querySelectorAll("[data-cart-minus]").forEach(el=>el.onclick=()=>changeQty(el.dataset.cartMinus,-1));
   document.querySelectorAll("[data-cart-plus]").forEach(el=>el.onclick=()=>changeQty(el.dataset.cartPlus,1));
@@ -639,8 +701,9 @@ function openSaleEditForm(sale) {
 }
 function saleEditLine(item={}) {
   const product=state.products.find(product=>product.id===item.productId)||state.products.find(product=>product.name===item.name)||state.products[0];
+  if(!product) return "";
   return `<div class="customer-order-line">
-    <select name="saleProductId" required>${state.products.map(option=>`<option value="${option.id}" ${option.id===product.id?"selected":""}>${option.name} · ${option.brand}</option>`).join("")}</select>
+    <select name="saleProductId" required>${productOptions(product.id)}</select>
     <select name="saleMl" required>${[30,50,60,100].map(ml=>`<option value="${ml}" ${ml===Number(item.ml||product.ml)?"selected":""}>${ml} ml</option>`).join("")}</select>
     <input name="saleQty" type="number" min="1" value="${item.qty||1}" aria-label="Cantidad" required>
     <input name="salePrice" type="number" min="0" step=".01" value="${item.price??product.price}" aria-label="Precio" required>
@@ -666,7 +729,7 @@ function openOrderForm(order=null) {
     <input type="hidden" name="id" value="${order?.id||""}">
     <div class="form-group"><label>Cliente</label><input name="client" list="clientList" value="${order?.client||""}" required><datalist id="clientList">${state.clients.map(client=>`<option value="${client.name}">`).join("")}</datalist></div>
     <div class="form-group"><label>Fecha</label><input name="date" type="date" value="${order?.date?.slice(0,10)||todayISO()}" required></div>
-    <div class="form-group full"><div class="list-label"><label>Artículos solicitados</label><button type="button" class="link-button" id="addCustomerOrderRow">＋ Agregar artículo</button></div>
+    <div class="form-group full"><div class="list-label"><label>Artículos solicitados</label><div class="line-list-actions">${productSortSelect("orderLineSort")}<button type="button" class="link-button" id="addCustomerOrderRow">＋ Agregar artículo</button></div></div>
       <div class="customer-order-head"><span>Artículo</span><span>ML</span><span>Cantidad</span><span>Precio</span><span></span></div>
       <div class="customer-order-lines" id="customerOrderLines">${items.map(item=>customerOrderLine(state.products.find(product=>product.id===item.productId)||state.products.find(product=>product.name===item.name)||state.products[0],item)).join("")}</div>
     </div>
@@ -677,6 +740,10 @@ function openOrderForm(order=null) {
     <div class="modal-actions full"><button type="button" class="secondary-button" data-close-modal>Cancelar</button><button type="submit" class="primary-button">${order?"Guardar cambios":"Crear pedido"}</button></div>
   </form>`);
   document.querySelector(".modal").classList.add("modal-wide");
+  document.querySelector("#orderLineSort").onchange=e=>{
+    state.productSort=e.target.value;
+    reorderProductSelects("#customerOrderLines","orderProductId");
+  };
   document.querySelector("#addCustomerOrderRow").onclick=()=>{
     document.querySelector("#customerOrderLines").insertAdjacentHTML("beforeend",customerOrderLine());
     updateCustomerOrderTotal();
@@ -697,8 +764,9 @@ function openOrderForm(order=null) {
 }
 
 function customerOrderLine(product=state.products[0],item={}) {
+  if(!product) return "";
   return `<div class="customer-order-line">
-    <select name="orderProductId" required>${state.products.map(item=>`<option value="${item.id}" ${item.id===product.id?"selected":""}>${item.name} · ${item.brand}</option>`).join("")}</select>
+    <select name="orderProductId" required>${productOptions(product.id)}</select>
     <select name="orderMl" required>${[30,50,60,100].map(ml=>`<option value="${ml}" ${ml===Number(item.ml||product.ml)?"selected":""}>${ml} ml</option>`).join("")}</select>
     <input name="orderQty" type="number" min="1" value="${item.qty||1}" aria-label="Cantidad" required>
     <input name="orderPrice" type="number" min="0" step=".01" value="${item.price??product.price}" aria-label="Precio" required>
@@ -711,6 +779,7 @@ function updateCustomerOrderTotal() {
   if(input) input.value=total.toFixed(2);
 }
 function openPurchaseOrderForm(order=null) {
+  if(!state.products.length) return showToast("Primero agrega artículos al catálogo.");
   const demand=pendingDemand();
   const suggested=demand.length
     ? demand.map(item=>({product:state.products.find(product=>product.id===item.productId)||state.products.find(product=>product.name===item.name),ml:item.ml,qty:item.toOrder})).filter(item=>item.product)
@@ -726,7 +795,7 @@ function openPurchaseOrderForm(order=null) {
       <div class="form-group"><label>Fecha</label><input name="date" type="date" value="${order?.date?.slice(0,10)||todayISO()}" required></div>
       <div class="form-group"><label>Estado</label><select name="status">${["Pendiente","En tránsito","Recibido"].map(status=>`<option ${status===(order?.status||"Pendiente")?"selected":""}>${status}</option>`).join("")}</select></div>
       <div class="form-group full">
-        <div class="list-label"><label>Lista de productos</label><button type="button" class="link-button" id="addPurchaseRow">＋ Agregar fila</button></div>
+        <div class="list-label"><label>Lista de productos</label><div class="line-list-actions">${productSortSelect("purchaseLineSort")}<button type="button" class="link-button" id="addPurchaseRow">＋ Agregar fila</button></div></div>
         <div class="purchase-line-head"><span>Producto</span><span>ML</span><span>Tipo</span><span>Cantidad</span><span>Precio unit.</span><span></span></div>
         <div class="purchase-lines" id="purchaseLines">
           ${initialItems.map(item=>purchaseLineRow(item.product,item.qty,item.ml,item.lineType,item.unitCost)).join("")}
@@ -735,8 +804,12 @@ function openPurchaseOrderForm(order=null) {
       <div class="form-group full"><label>Observaciones</label><textarea name="notes" placeholder="Presentación, condiciones de entrega, forma de pago...">${order?.notes||""}</textarea></div>
       <div class="purchase-form-total full"><span>Total estimado</span><strong id="purchaseFormTotal">${money(order?.total||0)}</strong></div>
       <div class="modal-actions full"><button type="button" class="secondary-button" data-close-modal>Cancelar</button><button class="primary-button">${order?"Guardar cambios":"Generar orden"}</button></div>
-    </form>`);
+  </form>`);
   document.querySelector(".modal").classList.add("modal-wide");
+  document.querySelector("#purchaseLineSort").onchange=e=>{
+    state.productSort=e.target.value;
+    reorderProductSelects("#purchaseLines","productId");
+  };
   document.querySelector("#addPurchaseRow").onclick=()=>addPurchaseLine();
   document.querySelector("#purchaseLines").addEventListener("input",updatePurchaseFormTotal);
   document.querySelector("#purchaseLines").addEventListener("change",e=>{
@@ -754,9 +827,10 @@ function openPurchaseOrderForm(order=null) {
   updatePurchaseFormTotal();
 }
 
-function purchaseLineRow(product=state.products[0], qty=1, selectedMl=product.ml, lineType="Compra", unitCost=product.cost) {
+function purchaseLineRow(product=state.products[0], qty=1, selectedMl=product?.ml, lineType="Compra", unitCost=product?.cost) {
+  if(!product) return "";
   return `<div class="purchase-line">
-    <select name="productId" required>${state.products.map(p=>`<option value="${p.id}" ${p.id===product.id?"selected":""}>${p.name} · ${p.brand}</option>`).join("")}</select>
+    <select name="productId" required>${productOptions(product.id)}</select>
     <select name="ml" aria-label="Mililitros" required>${[30,50,60,100].map(ml=>`<option value="${ml}" ${Number(selectedMl)===ml?"selected":""}>${ml} ml</option>`).join("")}</select>
     <select name="lineType" aria-label="Tipo de pedido"><option value="Compra" ${lineType!=="Regalo"?"selected":""}>Compra</option><option value="Regalo" ${lineType==="Regalo"?"selected":""}>Regalo</option></select>
     <input name="qty" type="number" min="1" value="${qty}" aria-label="Cantidad" required>
@@ -1080,8 +1154,11 @@ document.addEventListener("submit",e=>{
     if(!productIds.length) return showToast("Agrega al menos un producto a la orden.");
     const items=productIds.map((productId,index)=>{
       const product=state.products.find(p=>p.id===productId);
+      if(!product) return null;
       return {productId,name:product.name,brand:product.brand,category:product.category,ml:+milliliters[index],lineType:lineTypes[index]||"Compra",qty:+quantities[index],unitCost:+unitCosts[index]};
-    });
+    }).filter(Boolean);
+    if(items.length!==productIds.length) return showToast("Hay un producto inválido. Vuelve a seleccionarlo.");
+    if(items.some(item=>!Number.isFinite(item.qty)||item.qty<1||!Number.isFinite(item.unitCost)||item.unitCost<0)) return showToast("Revisa cantidades y precios de la orden.");
     const total=items.reduce((sum,item)=>sum+item.qty*item.unitCost,0);
     const current=data.id&&state.purchaseOrders.find(order=>order.id===data.id);
     if(current?.status==="Recibido") adjustReceivedPurchase(current.items,-1);
