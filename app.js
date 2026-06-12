@@ -412,10 +412,11 @@ function orderItemsLabel(items=[]) {
 function pendingDemand() {
   const demand=new Map();
   state.orders.filter(order=>order.status!=="Entregado").forEach(order=>{
-    order.items.forEach(item=>{
+    (Array.isArray(order.items)?order.items:[]).forEach(item=>{
+      if(!item?.productId&&!item?.name) return;
       const key=`${item.productId}|${item.ml}`;
       const current=demand.get(key)||{...item,qty:0};
-      current.qty+=item.qty;
+      current.qty+=Number(item.qty)||0;
       demand.set(key,current);
     });
   });
@@ -829,16 +830,20 @@ function openPurchaseOrderForm(order=null) {
 
 function purchaseLineRow(product=state.products[0], qty=1, selectedMl=product?.ml, lineType="Compra", unitCost=product?.cost) {
   if(!product) return "";
+  const safeQty=Math.max(1,Number(qty)||1);
+  const safeMl=Number(selectedMl)||Number(product.ml)||100;
+  const safeUnitCost=Math.max(0,Number(unitCost??product.cost)||0);
   return `<div class="purchase-line">
     <select name="productId" required>${productOptions(product.id)}</select>
-    <select name="ml" aria-label="Mililitros" required>${[30,50,60,100].map(ml=>`<option value="${ml}" ${Number(selectedMl)===ml?"selected":""}>${ml} ml</option>`).join("")}</select>
+    <select name="ml" aria-label="Mililitros" required>${[30,50,60,100].map(ml=>`<option value="${ml}" ${safeMl===ml?"selected":""}>${ml} ml</option>`).join("")}</select>
     <select name="lineType" aria-label="Tipo de pedido"><option value="Compra" ${lineType!=="Regalo"?"selected":""}>Compra</option><option value="Regalo" ${lineType==="Regalo"?"selected":""}>Regalo</option></select>
-    <input name="qty" type="number" min="1" value="${qty}" aria-label="Cantidad" required>
-    <input name="unitCost" type="number" min="0" step=".01" value="${unitCost??product.cost}" aria-label="Costo unitario" required>
+    <input name="qty" type="number" min="1" value="${safeQty}" aria-label="Cantidad" required>
+    <input name="unitCost" type="number" min="0" step=".01" value="${safeUnitCost}" aria-label="Costo unitario" required>
     <button type="button" class="remove-line" data-remove-line aria-label="Eliminar fila">×</button>
   </div>`;
 }
 function addPurchaseLine() {
+  if(!state.products.length) return showToast("Primero agrega un producto al catálogo.");
   document.querySelector("#purchaseLines").insertAdjacentHTML("beforeend",purchaseLineRow());
   updatePurchaseFormTotal();
 }
@@ -1145,28 +1150,37 @@ document.addEventListener("submit",e=>{
     persist();closeModal();render();showToast(current?"Pedido actualizado correctamente.":"Pedido creado y agregado a la demanda de compra.");
   }
   if(e.target.id==="purchaseForm"){
-    const formData=new FormData(e.target);
-    const productIds=formData.getAll("productId");
-    const milliliters=formData.getAll("ml");
-    const lineTypes=formData.getAll("lineType");
-    const quantities=formData.getAll("qty");
-    const unitCosts=formData.getAll("unitCost");
-    if(!productIds.length) return showToast("Agrega al menos un producto a la orden.");
-    const items=productIds.map((productId,index)=>{
-      const product=state.products.find(p=>p.id===productId);
-      if(!product) return null;
-      return {productId,name:product.name,brand:product.brand,category:product.category,ml:+milliliters[index],lineType:lineTypes[index]||"Compra",qty:+quantities[index],unitCost:+unitCosts[index]};
-    }).filter(Boolean);
-    if(items.length!==productIds.length) return showToast("Hay un producto inválido. Vuelve a seleccionarlo.");
-    if(items.some(item=>!Number.isFinite(item.qty)||item.qty<1||!Number.isFinite(item.unitCost)||item.unitCost<0)) return showToast("Revisa cantidades y precios de la orden.");
-    const total=items.reduce((sum,item)=>sum+item.qty*item.unitCost,0);
-    const current=data.id&&state.purchaseOrders.find(order=>order.id===data.id);
-    if(current?.status==="Recibido") adjustReceivedPurchase(current.items,-1);
-    const values={supplier:data.supplier,supplierPhone:data.supplierPhone,date:data.date,status:data.status,notes:data.notes,items,total};
-    if(current) Object.assign(current,values);
-    else state.purchaseOrders.unshift({id:`OC-${String(state.purchaseOrders.length+1).padStart(3,"0")}`,...values});
-    if(data.status==="Recibido") adjustReceivedPurchase(items,1);
-    persist();closeModal();render();showToast(current?"Orden de compra actualizada.":"Orden de compra generada.");
+    try {
+      const formData=new FormData(e.target);
+      const productIds=formData.getAll("productId");
+      const milliliters=formData.getAll("ml");
+      const lineTypes=formData.getAll("lineType");
+      const quantities=formData.getAll("qty");
+      const unitCosts=formData.getAll("unitCost");
+      if(!productIds.length) return showToast("Agrega al menos un producto a la orden.");
+      const items=productIds.map((productId,index)=>{
+        const product=state.products.find(p=>p.id===productId);
+        if(!product) return null;
+        return {productId,name:product.name,brand:product.brand||"",category:product.category||"",ml:Number(milliliters[index])||Number(product.ml)||100,lineType:lineTypes[index]||"Compra",qty:Number(quantities[index]),unitCost:Number(unitCosts[index])};
+      }).filter(Boolean);
+      if(items.length!==productIds.length) return showToast("Hay un producto inválido. Vuelve a seleccionarlo.");
+      if(items.some(item=>!Number.isFinite(item.qty)||item.qty<1||!Number.isFinite(item.unitCost)||item.unitCost<0)) return showToast("Revisa cantidades y precios de la orden.");
+      const total=items.reduce((sum,item)=>sum+item.qty*item.unitCost,0);
+      const values={supplier:String(data.supplier||"").trim(),supplierPhone:String(data.supplierPhone||"").trim(),date:data.date,status:data.status||"Pendiente",notes:String(data.notes||"").trim(),items,total};
+      if(!values.supplier) return showToast("Ingresa el nombre del proveedor.");
+      const current=data.id&&state.purchaseOrders.find(order=>order.id===data.id);
+      if(current?.status==="Recibido") adjustReceivedPurchase(current.items,-1);
+      if(current) Object.assign(current,values);
+      else {
+        const nextNumber=state.purchaseOrders.reduce((max,order)=>Math.max(max,Number(String(order.id||"").replace(/\D/g,""))||0),0)+1;
+        state.purchaseOrders.unshift({id:`OC-${String(nextNumber).padStart(3,"0")}`,...values});
+      }
+      if(values.status==="Recibido") adjustReceivedPurchase(items,1);
+      persist();closeModal();render();showToast(current?"Orden de compra actualizada.":"Orden de compra generada.");
+    } catch(error) {
+      console.error("No se pudo guardar la orden de compra:",error);
+      showToast("No se pudo generar la orden. Revisa los datos e inténtalo nuevamente.");
+    }
   }
   if(e.target.id==="saleEditForm"){
     const formData=new FormData(e.target);
