@@ -789,7 +789,7 @@ function openPurchaseOrderForm(order=null) {
     ? order.items.map(item=>({product:state.products.find(product=>product.id===item.productId)||state.products.find(product=>product.name===item.name)||state.products[0],...item}))
     : (suggested.length?suggested.slice(0,8):[{product:state.products[0],ml:state.products[0]?.ml,qty:1}]).filter(item=>item.product);
   openModal(`<h2>${order?"Editar":"Nueva"} orden de compra</h2>
-    <form id="purchaseForm" class="form-grid">
+    <form id="purchaseForm" class="form-grid" novalidate>
       <input type="hidden" name="id" value="${order?.id||""}">
       <div class="form-group"><label>Proveedor</label><input name="supplier" value="${order?.supplier||"Fragancias E&L"}" required></div>
       <div class="form-group"><label>WhatsApp del proveedor</label><input name="supplierPhone" value="${order?.supplierPhone||"51927962831"}" inputmode="tel" placeholder="51999999999"></div>
@@ -804,9 +804,10 @@ function openPurchaseOrderForm(order=null) {
       </div>
       <div class="form-group full"><label>Observaciones</label><textarea name="notes" placeholder="Presentación, condiciones de entrega, forma de pago...">${order?.notes||""}</textarea></div>
       <div class="purchase-form-total full"><span>Total estimado</span><strong id="purchaseFormTotal">${money(order?.total||0)}</strong></div>
-      <div class="modal-actions full"><button type="button" class="secondary-button" data-close-modal>Cancelar</button><button class="primary-button">${order?"Guardar cambios":"Generar orden"}</button></div>
+      <div class="modal-actions full"><button type="button" class="secondary-button" data-close-modal>Cancelar</button><button type="submit" class="primary-button">${order?"Guardar cambios":"Generar orden"}</button></div>
   </form>`);
   document.querySelector(".modal").classList.add("modal-wide");
+  document.querySelector("#purchaseForm").addEventListener("submit",savePurchaseOrder);
   document.querySelector("#purchaseLineSort").onchange=e=>{
     state.productSort=e.target.value;
     reorderProductSelects("#purchaseLines","productId");
@@ -826,6 +827,67 @@ function openPurchaseOrderForm(order=null) {
     if(e.target.matches("[data-remove-line]")) { e.target.closest(".purchase-line").remove(); updatePurchaseFormTotal(); }
   });
   updatePurchaseFormTotal();
+}
+
+function savePurchaseOrder(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const form=event.currentTarget;
+  try {
+    const formData=new FormData(form);
+    const productIds=formData.getAll("productId");
+    const milliliters=formData.getAll("ml");
+    const lineTypes=formData.getAll("lineType");
+    const quantities=formData.getAll("qty");
+    const unitCosts=formData.getAll("unitCost");
+    const supplier=String(formData.get("supplier")||"").trim();
+    const date=String(formData.get("date")||"").trim();
+    if(!supplier) return showToast("Ingresa el nombre del proveedor.");
+    if(!date) return showToast("Selecciona la fecha de la orden.");
+    if(!productIds.length) return showToast("Agrega al menos un producto a la orden.");
+    const items=productIds.map((productId,index)=>{
+      const product=state.products.find(p=>p.id===productId);
+      if(!product) return null;
+      return {
+        productId,
+        name:product.name,
+        brand:product.brand||"",
+        category:product.category||"",
+        ml:Number(milliliters[index])||Number(product.ml)||100,
+        lineType:lineTypes[index]||"Compra",
+        qty:Number(quantities[index]),
+        unitCost:Number(unitCosts[index])
+      };
+    }).filter(Boolean);
+    if(items.length!==productIds.length) return showToast("Hay un producto inválido. Vuelve a seleccionarlo.");
+    if(items.some(item=>!Number.isFinite(item.qty)||item.qty<1)) return showToast("Todas las cantidades deben ser mayores a cero.");
+    if(items.some(item=>!Number.isFinite(item.unitCost)||item.unitCost<0)) return showToast("Revisa los precios unitarios de la orden.");
+    const id=String(formData.get("id")||"");
+    const current=id&&state.purchaseOrders.find(order=>order.id===id);
+    const values={
+      supplier,
+      supplierPhone:String(formData.get("supplierPhone")||"").trim(),
+      date,
+      status:String(formData.get("status")||"Pendiente"),
+      notes:String(formData.get("notes")||"").trim(),
+      items,
+      total:items.reduce((sum,item)=>sum+item.qty*item.unitCost,0)
+    };
+    if(current?.status==="Recibido") adjustReceivedPurchase(current.items,-1);
+    if(current) Object.assign(current,values);
+    else {
+      const nextNumber=state.purchaseOrders.reduce((max,order)=>Math.max(max,Number(String(order.id||"").replace(/\D/g,""))||0),0)+1;
+      state.purchaseOrders.unshift({id:`OC-${String(nextNumber).padStart(3,"0")}`,...values});
+    }
+    if(values.status==="Recibido") adjustReceivedPurchase(items,1);
+    persist();
+    closeModal();
+    render();
+    showToast(current?"Orden de compra actualizada.":"Orden de compra generada.");
+  } catch(error) {
+    console.error("No se pudo guardar la orden de compra:",error);
+    showToast("No se pudo generar la orden. Recarga la aplicación e inténtalo nuevamente.");
+  }
 }
 
 function purchaseLineRow(product=state.products[0], qty=1, selectedMl=product?.ml, lineType="Compra", unitCost=product?.cost) {
@@ -1148,39 +1210,6 @@ document.addEventListener("submit",e=>{
     if(current) Object.assign(current,values);
     else state.orders.unshift({id:`PED-${String(state.orders.length+1).padStart(3,"0")}`,...values});
     persist();closeModal();render();showToast(current?"Pedido actualizado correctamente.":"Pedido creado y agregado a la demanda de compra.");
-  }
-  if(e.target.id==="purchaseForm"){
-    try {
-      const formData=new FormData(e.target);
-      const productIds=formData.getAll("productId");
-      const milliliters=formData.getAll("ml");
-      const lineTypes=formData.getAll("lineType");
-      const quantities=formData.getAll("qty");
-      const unitCosts=formData.getAll("unitCost");
-      if(!productIds.length) return showToast("Agrega al menos un producto a la orden.");
-      const items=productIds.map((productId,index)=>{
-        const product=state.products.find(p=>p.id===productId);
-        if(!product) return null;
-        return {productId,name:product.name,brand:product.brand||"",category:product.category||"",ml:Number(milliliters[index])||Number(product.ml)||100,lineType:lineTypes[index]||"Compra",qty:Number(quantities[index]),unitCost:Number(unitCosts[index])};
-      }).filter(Boolean);
-      if(items.length!==productIds.length) return showToast("Hay un producto inválido. Vuelve a seleccionarlo.");
-      if(items.some(item=>!Number.isFinite(item.qty)||item.qty<1||!Number.isFinite(item.unitCost)||item.unitCost<0)) return showToast("Revisa cantidades y precios de la orden.");
-      const total=items.reduce((sum,item)=>sum+item.qty*item.unitCost,0);
-      const values={supplier:String(data.supplier||"").trim(),supplierPhone:String(data.supplierPhone||"").trim(),date:data.date,status:data.status||"Pendiente",notes:String(data.notes||"").trim(),items,total};
-      if(!values.supplier) return showToast("Ingresa el nombre del proveedor.");
-      const current=data.id&&state.purchaseOrders.find(order=>order.id===data.id);
-      if(current?.status==="Recibido") adjustReceivedPurchase(current.items,-1);
-      if(current) Object.assign(current,values);
-      else {
-        const nextNumber=state.purchaseOrders.reduce((max,order)=>Math.max(max,Number(String(order.id||"").replace(/\D/g,""))||0),0)+1;
-        state.purchaseOrders.unshift({id:`OC-${String(nextNumber).padStart(3,"0")}`,...values});
-      }
-      if(values.status==="Recibido") adjustReceivedPurchase(items,1);
-      persist();closeModal();render();showToast(current?"Orden de compra actualizada.":"Orden de compra generada.");
-    } catch(error) {
-      console.error("No se pudo guardar la orden de compra:",error);
-      showToast("No se pudo generar la orden. Revisa los datos e inténtalo nuevamente.");
-    }
   }
   if(e.target.id==="saleEditForm"){
     const formData=new FormData(e.target);
